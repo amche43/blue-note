@@ -3,11 +3,15 @@ import 'package:flutter/services.dart';
 import 'domain.dart';
 import 'questions.dart';
 import 'store.dart';
+import 'notebooks.dart';
+import 'photo_import.dart';
+import 'entry_history.dart';
 
 class QuestionEditor extends StatefulWidget {
   final StudyStore store;
-  final String? id;
-  const QuestionEditor({super.key, required this.store, this.id});
+  final bool knowledge;
+  final String? id, notebookId, notebookTitle;
+  const QuestionEditor({super.key, required this.store, this.id, this.notebookId, this.notebookTitle, this.knowledge=false});
   @override State<QuestionEditor> createState() => _QuestionEditorState();
 }
 
@@ -15,12 +19,14 @@ class _QuestionEditorState extends State<QuestionEditor> {
   final form = GlobalKey<FormState>();
   late final Map<String, TextEditingController> fields;
   late final Json original;
+  Json? capture;
+  bool get knowledge => fields['contentKind']!.text == 'knowledge';
   List<Lesson>? suggestions;
   bool busy = false, changed = false;
   String? error;
   @override void initState() {
     super.initState();
-    original = widget.id == null ? blankQuestion() : {...widget.store.questions[widget.id]!};
+    original = widget.id == null ? {...blankQuestion(), 'notebookId': widget.notebookId ?? '', 'notebookTitle': widget.notebookTitle ?? '', 'contentKind': widget.knowledge ? 'knowledge' : 'question'} : validateQuestion(widget.store.questions[widget.id]);
     fields = {for (final key in questionLimits.keys) key: TextEditingController(text: original[key] as String)};
   }
   @override void dispose() { for (final field in fields.values) { field.dispose(); } super.dispose(); }
@@ -29,7 +35,7 @@ class _QuestionEditorState extends State<QuestionEditor> {
     padding: const EdgeInsets.only(bottom: 16), child: TextFormField(
       key: ValueKey('question-$key'), controller: fields[key], minLines: lines, maxLines: lines + 3,
       maxLength: questionLimits[key], decoration: InputDecoration(labelText: label, hintText: hint),
-      onChanged: (_) { changed = true; },
+      onChanged: (_) { setState(()=>changed = true); },
       validator: (value) => required && (value?.trim().isEmpty ?? true) ? '请填写$label' : null,
     ));
 
@@ -54,7 +60,7 @@ class _QuestionEditorState extends State<QuestionEditor> {
     if (busy || !form.currentState!.validate()) return;
     setState(() { busy = true; error = null; });
     try {
-      final id = await widget.store.saveQuestion({for (final e in fields.entries) e.key: e.value.text, 'deleted': false}, id: widget.id);
+      final id = await widget.store.saveQuestion({for (final e in fields.entries) e.key: e.value.text, 'deleted': false}, id: widget.id,capture:capture);
       if (mounted) finish(id);
     } catch (e) {
       if (mounted) setState(() { busy = false; error = e is FormatException ? e.message : '未能保存，请重试。编辑内容仍在这里。'; });
@@ -73,19 +79,31 @@ class _QuestionEditorState extends State<QuestionEditor> {
     canPop: !changed && !busy,
     onPopInvokedWithResult: (didPop, result) { if (!didPop) leave(); },
     child: Scaffold(
-      appBar: AppBar(title: Text(widget.id == null ? '添加我的题目' : '编辑题目'),
+      appBar: AppBar(title: Text(knowledge ? '编辑知识卡片' : widget.id == null ? '添加我的题目' : '编辑题目'),
         leading: IconButton(tooltip: '返回', icon: const Icon(Icons.arrow_back), onPressed: busy ? null : leave),
         actions: [IconButton(tooltip: '保存题目', icon: const Icon(Icons.check), onPressed: busy ? null : save)]),
       body: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 640),
         child: Form(key: form, child: ListView(padding: const EdgeInsets.all(24), children: [
-          const Text('先把题目留住，再慢慢补上想法。', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w600)),
+          Text(knowledge ? '把必须记住的知识，整理成自己的话。' : '先把题目留住，再慢慢补上想法。', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8), const Text('默认只保存在自己的题库。保存不会公开发布。'),
           const SizedBox(height: 24),
-          field('title', '题目名称', required: true, hint: '例如：一道没想到对称换元的积分题'),
+          if(widget.id!=null)TextButton.icon(onPressed:()=>Navigator.push<void>(context,MaterialPageRoute(builder:(_)=>EntryHistory(store:widget.store,id:widget.id!))),icon:const Icon(Icons.history),label:const Text('原图、录入记录与修改历史')),
+          if (widget.id == null) DropdownButtonFormField<String>(initialValue: fields['notebookId']!.text,
+            decoration: const InputDecoration(labelText: '保存到错题本'), items: [const DropdownMenuItem(value:'',child:Text('暂不分本')),
+              ...notebooks(widget.store).entries.where((e)=>isKnowledgeBook(widget.store,e.key)==knowledge).map((e)=>DropdownMenuItem(value:e.key,child:Text(e.value)))],
+            onChanged:busy?null:(id)=>setState((){fields['notebookId']!.text=id??'';fields['notebookTitle']!.text=notebooks(widget.store)[id]??'';fields['questionNumber']!.clear();changed=true;})),
+          if (widget.id != null && fields['notebookId']!.text.isNotEmpty) Text('${fields['notebookTitle']!.text} · 第${fields['questionNumber']!.text}题（固定题号）'),
+          OutlinedButton.icon(onPressed:busy?null:()async{
+            final result=await Navigator.push<Json>(context,MaterialPageRoute(builder:(_)=>PhotoImportPage(store:widget.store)));
+            if(result==null||!mounted)return;
+            if(fields['prompt']!.text.trim().isNotEmpty&&!await confirm('替换现有题干？','识别草稿将替换当前题干，请确认。','替换'))return;
+            if(mounted)setState((){fields['prompt']!.text=result['text'] as String;capture=result['capture'] as Json;changed=true;});
+          },icon:const Icon(Icons.document_scanner_outlined),label:const Text('拍照 / 从相册识题')),
+          field('title', knowledge ? '知识点名称 / 正面提示' : '题目名称', required: true, hint: '例如：一道没想到对称换元的积分题'),
           field('subject', '科目', required: true), field('chapter', '章节（可选）'),
-          field('prompt', '完整题干', required: true, lines: 4, hint: '写清已知条件和要求，也可以粘贴已识别的文字'),
-          ExpansionTile(title: const Text('公式与解答（可稍后补充）'), initiallyExpanded: true, children: [
-            field('formula', '公式（LaTeX，可选）', lines: 2), field('answer', '解答与思路', lines: 4),
+          field('prompt', knowledge ? '需要记住的内容（展开后显示）' : '完整题干', required: true, lines: 4, hint: '写清已知条件和要求，也可以粘贴已识别的文字'),
+          ExpansionTile(title: Text(knowledge ? '公式与解释（可稍后补充）' : '公式与解答（可稍后补充）'), initiallyExpanded: true, children: [
+            field('formula', '公式（LaTeX，可选）', lines: 2), field('answer', knowledge ? '理解、例子与记忆方法' : '解答与思路', lines: 4),
           ]),
           const SizedBox(height: 12),
           OutlinedButton.icon(onPressed: () => setState(() => suggestions = suggestLessons(
@@ -103,11 +121,12 @@ class _QuestionEditorState extends State<QuestionEditor> {
           ],
           const SizedBox(height: 18), const Text('我的关键点', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600)),
           const SizedBox(height: 16),
-          field('trigger', '看到什么线索', lines: 2), field('action', '应该想到哪一步', lines: 2),
+          field('trigger', '看到什么线索', lines: 2), field('action', knowledge ? '记忆线索' : '应该想到哪一步', lines: 2),
           field('conditions', '适用条件', lines: 2), field('pitfall', '容易误用的地方', lines: 2),
           field('source', '题目来源与署名（可选）', lines: 2),
+          ExpansionTile(title:const Text('我的思考过程'),children:[field('firstThought','我的第一反应',lines:2),field('errorReason','错误原因',lines:2),field('summary','一句话总结',lines:2)]),
           if (error != null) Padding(padding: const EdgeInsets.only(bottom: 16), child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
-          FilledButton(onPressed: busy ? null : save, child: Text(busy ? '正在保存…' : '保存到我的题库')),
+          FilledButton(onPressed: busy ? null : save, child: Text(busy ? '正在保存…' : knowledge ? '保存知识卡片' : '保存到我的题库')),
           if (widget.id != null) TextButton(onPressed: busy ? null : () async {
             if (!await confirm('删除这道自建题目？', '会从自己的题库移除，已分享给别人的副本不受影响。', '删除')) return;
             if (!mounted) return;
@@ -131,7 +150,8 @@ Future<void> shareQuestionDialog(BuildContext context, StudyStore store, String 
     content: SizedBox(width: 480, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(question['title'] as String, style: const TextStyle(fontWeight: FontWeight.w600)),
       const SizedBox(height: 10), Text(question['prompt'] as String, maxLines: 5, overflow: TextOverflow.ellipsis),
-      const SizedBox(height: 12), const Text('将包含题干、公式、解答、关键点和来源。私人蓝笔笔记与作答记录不会包含在内。\n这一步只复制题目包，不会上传服务器。'),
+      const SizedBox(height: 12), const Text('将包含正文、公式、解答、关键点、思考过程和来源。私人蓝笔笔记、识别原图与作答记录不会包含在内。\n这一步只复制题目包，不会上传服务器。'),
+      ...['firstThought','errorReason','summary'].where((k)=>(question[k] as String? ?? '').isNotEmpty).map((k)=>Text('${{'firstThought':'我的第一反应','errorReason':'错误原因','summary':'一句话总结'}[k]}：${question[k]}')),
       const SizedBox(height: 16), TextField(controller: author, maxLength: 80, decoration: const InputDecoration(labelText: '分享署名')),
       CheckboxListTile(contentPadding: EdgeInsets.zero, value: consent, title: const Text('我同意将上述题目内容分享给他人'), onChanged: (v) => setState(() => consent = v ?? false)),
       if (error != null) Text(error!),

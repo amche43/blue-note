@@ -11,6 +11,7 @@ import secrets
 import sqlite3
 import ssl
 import time
+from urllib.parse import urlsplit, parse_qs
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LIMIT = 512 * 1024
@@ -48,7 +49,21 @@ def initialize(path):
           request_id TEXT NOT NULL, lesson TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL,
           status TEXT NOT NULL DEFAULT 'pending', reply TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL,
           UNIQUE(owner,request_id));
+        CREATE TABLE IF NOT EXISTS notebooks(id TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id), local_id TEXT NOT NULL,
+          title TEXT NOT NULL, UNIQUE(owner,local_id));
+        CREATE TABLE IF NOT EXISTS notebook_reactions(book TEXT NOT NULL REFERENCES notebooks(id),
+          owner TEXT NOT NULL REFERENCES users(id), liked INTEGER NOT NULL DEFAULT 0,
+          saved INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(book,owner));
         ''')
+        columns = {row['name'] for row in db.execute('PRAGMA table_info(questions)')}
+        if 'notebook_id' not in columns:
+            db.execute("ALTER TABLE questions ADD COLUMN notebook_id TEXT NOT NULL DEFAULT ''")
+            db.execute("ALTER TABLE questions ADD COLUMN question_number TEXT NOT NULL DEFAULT ''")
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS active_book_number ON questions(notebook_id,question_number) WHERE active=1 AND notebook_id!=''")
+        import collaboration
+        collaboration.initialize(db)
+        import accounts
+        accounts.initialize(db)
 
 
 def provision(path, name):
@@ -87,11 +102,17 @@ def package(body, author):
     q = {key: text(value, key, size, key in ('title', 'subject', 'prompt'))
          for key, size in FIELDS.items()}
     q.update(origin='', deleted=False)
+    for field in ('firstThought','errorReason','summary'):
+        if field in value: q[field]=text(value,field,4000,False)
+    if 'contentKind' in value:
+        if value['contentKind'] not in ('question','knowledge'):
+            raise Invalid('内容类型不正确')
+        q['contentKind'] = value['contentKind']
     return dict(format='blue-note-question', version=1, author=author, question=q)
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = 'BlueNoteLocal/0.3'
+    server_version = 'BlueNoteLocal/0.8'
 
     def log_message(self, *_):
         pass  # No credentials or user content in request logs.
@@ -115,7 +136,8 @@ class Handler(BaseHTTPRequestHandler):
                 auth = self.headers.get('Authorization', '')
                 digest = hashlib.sha256(auth.removeprefix('Bearer ').encode()).hexdigest()
                 user = db.execute('SELECT * FROM users WHERE token=?', (digest,)).fetchone() if auth.startswith('Bearer ') else None
-                if user is None:
+                is_auth = self.command == 'POST' and self.path in ('/v1/auth/login','/v1/auth/register')
+                if user is None and not is_auth:
                     raise Invalid('连接口令无效，请重新导入连接配置', 401)
                 body = {}
                 if self.command in ('POST', 'PUT'):
@@ -125,7 +147,7 @@ class Handler(BaseHTTPRequestHandler):
                         size = int(self.headers.get('Content-Length', '0'))
                     except ValueError:
                         raise Invalid('请求长度不正确')
-                    if not 0 < size <= LIMIT:
+                    if not 0 < size <= (12 * 1024 * 1024 if self.path == '/v1/ocr' else LIMIT):
                         raise Invalid('内容过大或为空', 413)
                     try:
                         body = json.loads(self.rfile.read(size))
@@ -134,9 +156,13 @@ class Handler(BaseHTTPRequestHandler):
                     if not isinstance(body, dict):
                         raise Invalid('内容格式不正确')
                 # One transaction serializes read-before-write and idempotency checks.
-                if self.command != 'GET':
+                if self.command != 'GET' and self.path != '/v1/ocr':
                     db.execute('BEGIN IMMEDIATE')
-                result = self.route(db, user, body)
+                if is_auth:
+                    import accounts
+                    result = accounts.authenticate(db, self.path, body, Invalid, text)
+                else:
+                    result = self.route(db, user, body)
             # Commit completed before acknowledging delivery.
             self.send_json(200, result)
         except Invalid as error:
@@ -147,8 +173,75 @@ class Handler(BaseHTTPRequestHandler):
     do_GET = do_POST = do_PUT = do_DELETE = dispatch
 
     def route(self, db, user, body):
-        path, method = self.path, self.command
+        parsed = urlsplit(self.path)
+        path, method = parsed.path, self.command
         uid = user['id']
+        import collaboration
+        result = collaboration.route(db, uid, method, path, body, Invalid, text, request_id)
+        if result is not None:
+            return result
+        if path == '/v1/hall' and method == 'GET':
+            args = parse_qs(parsed.query)
+            query = args.get('q', [''])[0].strip().lower()
+            if len(query) > 100:
+                raise Invalid('搜索词最多100字')
+            terms = [query, {'高数':'高等数学','线代':'线性代数','计网':'计算机网络','计组':'计算机组成原理'}.get(query, query)]
+            kind = args.get('kind',['all'])[0]
+            saved_only = args.get('saved',['0'])[0] == '1'
+            if kind not in ('all','knowledge','question'):
+                raise Invalid('内容类型不正确')
+            sort = args.get('sort',['newest'])[0]
+            order = {'newest':'updated DESC,id', 'likes':'likes DESC,updated DESC,id', 'saves':'saves DESC,updated DESC,id'}.get(sort)
+            if order is None:
+                raise Invalid('排序不正确')
+            try:
+                offset = int(args.get('offset',['0'])[0])
+                if offset < 0 or offset > 100000: raise ValueError()
+            except ValueError:
+                raise Invalid('分页不正确')
+            sql = '''WITH catalog AS (
+              SELECT b.id,b.title,u.name,count(q.id) AS count,max(q.created) AS updated,
+                group_concat(DISTINCT json_extract(q.package,'$.question.subject')) AS subjects,
+                CASE WHEN min(COALESCE(json_extract(q.package,'$.question.contentKind'),'question'))='knowledge'
+                  AND max(COALESCE(json_extract(q.package,'$.question.contentKind'),'question'))='knowledge'
+                  THEN 'knowledge' ELSE 'question' END AS kind,
+                (SELECT count(*) FROM notebook_reactions r WHERE r.book=b.id AND liked=1) AS likes,
+                (SELECT count(*) FROM notebook_reactions r WHERE r.book=b.id AND saved=1) AS saves,
+                COALESCE((SELECT liked FROM notebook_reactions r WHERE r.book=b.id AND owner=?),0) AS liked,
+                COALESCE((SELECT saved FROM notebook_reactions r WHERE r.book=b.id AND owner=?),0) AS saved
+              FROM notebooks b JOIN users u ON u.id=b.owner JOIN questions q ON q.notebook_id=b.id AND q.active=1
+              GROUP BY b.id)
+              SELECT * FROM catalog WHERE (instr(lower(title||' '||subjects||' '||name),?)>0
+                OR instr(lower(title||' '||subjects||' '||name),?)>0) AND (?='all' OR kind=?) AND (?=0 OR saved=1)
+              ORDER BY ''' + order + ' LIMIT 51 OFFSET ?'
+            rows = [dict(r) for r in db.execute(sql,(uid,uid,*terms,kind,kind,int(saved_only),offset))]
+            return {'items':rows[:50], 'nextOffset':offset+50 if len(rows)>50 else None}
+        reaction = re.fullmatch(r'/v1/notebooks/(book-[a-f0-9]{32})/reaction', path)
+        if reaction and method == 'PUT':
+            if not db.execute('SELECT 1 FROM questions WHERE notebook_id=? AND active=1',(reaction[1],)).fetchone():
+                raise Invalid('本子已撤回或不存在',404)
+            field = body.get('field')
+            if field not in ('liked','saved') or type(body.get('value')) is not bool:
+                raise Invalid('操作状态不正确')
+            db.execute('INSERT OR IGNORE INTO notebook_reactions(book,owner) VALUES(?,?)',(reaction[1],uid))
+            db.execute('UPDATE notebook_reactions SET '+field+'=? WHERE book=? AND owner=?',(int(body['value']),reaction[1],uid))
+            return {'ok':True}
+        if path == '/v1/ocr' and method == 'POST':
+            if body.get('consent') is not True:
+                raise Invalid('请确认将此照片交给当前本机后台识别')
+            from photo_ocr import recognize
+            try:
+                return recognize(body.get('image'))
+            except ValueError as error:
+                raise Invalid(str(error))
+            except RuntimeError as error:
+                raise Invalid(str(error), 503)
+        if path == '/v1/notebooks' and method == 'GET':
+            return {'items': [dict(row) for row in db.execute('SELECT b.id,b.title,u.name,count(q.id) AS count FROM notebooks b JOIN users u ON u.id=b.owner JOIN questions q ON q.notebook_id=b.id AND q.active=1 GROUP BY b.id ORDER BY b.title LIMIT 200')]}
+        book_match = re.fullmatch(r'/v1/notebooks/(book-[a-f0-9]{32})', path)
+        if book_match and method == 'GET':
+            rows = db.execute('SELECT q.*,u.name FROM questions q JOIN users u ON u.id=q.owner WHERE q.notebook_id=? AND active=1 ORDER BY CAST(question_number AS INTEGER) LIMIT 200', (book_match[1],))
+            return {'items':[self.question(db,row,uid,summary=True) for row in rows]}
         if path == '/v1/me' and method == 'GET':
             return {'id': uid, 'name': user['name']}
         if path == '/v1/questions' and method == 'GET':
@@ -156,16 +249,35 @@ class Handler(BaseHTTPRequestHandler):
             return {'items': [self.question(db, row, uid, summary=True) for row in rows]}
         if path == '/v1/questions' and method == 'POST':
             rid, value = request_id(body), package(body, user['name'])
+            metadata = body['question']
+            book_id, number = '', ''
+            local_book = metadata.get('notebookId', '')
+            if local_book:
+                if not isinstance(local_book,str) or not re.fullmatch(r'book-[a-f0-9]{32}',local_book):
+                    raise Invalid('错题本编号不正确')
+                title, number = text(metadata,'notebookTitle',80), text(metadata,'questionNumber',9)
+                if not re.fullmatch(r'[1-9][0-9]{0,8}',number):
+                    raise Invalid('题号不正确')
+                book = db.execute('SELECT * FROM notebooks WHERE owner=? AND local_id=?',(uid,local_book)).fetchone()
+                if book is None:
+                    book_id = 'book-' + secrets.token_hex(16)
+                    db.execute('INSERT INTO notebooks VALUES(?,?,?,?)',(book_id,uid,local_book,title))
+                else:
+                    book_id = book['id']
+                    title = book['title']
+                value['question'].update(notebookId=book_id,notebookTitle=title,questionNumber=number)
             old = db.execute('SELECT * FROM questions WHERE owner=? AND request_id=?', (uid, rid)).fetchone()
             if old:
                 value['id'] = old['id']
                 if json.loads(old['package']) != value:
                     raise Invalid('相同请求编号的内容发生变化', 409)
                 return {'id': old['id'], 'active': bool(old['active'])}
+            if book_id and db.execute('SELECT 1 FROM questions WHERE notebook_id=? AND question_number=? AND active=1',(book_id,number)).fetchone():
+                raise Invalid('这本的该题号已经公开；如需替换，请先撤回旧发布。旧讨论保留在旧版本。',409)
             qid = 'user-' + secrets.token_hex(16)
             value['id'] = qid
-            db.execute('INSERT INTO questions(id,owner,request_id,package,created) VALUES(?,?,?,?,?)',
-                       (qid, uid, rid, json.dumps(value, ensure_ascii=False), time.time_ns()))
+            db.execute('INSERT INTO questions(id,owner,request_id,package,created,notebook_id,question_number) VALUES(?,?,?,?,?,?,?)',
+                       (qid, uid, rid, json.dumps(value, ensure_ascii=False), time.time_ns(),book_id,number))
             return {'id': qid, 'active': True}
         if path == '/v1/feedback' and method == 'GET':
             return {'items': [dict(r) for r in db.execute('SELECT id,request_id,lesson,title,body,status,reply FROM feedback WHERE owner=? ORDER BY created DESC LIMIT 500', (uid,))]}
@@ -226,7 +338,7 @@ class Handler(BaseHTTPRequestHandler):
         liked = db.execute('SELECT 1 FROM likes WHERE question=? AND owner=?', (row['id'], uid)).fetchone() is not None
         value = json.loads(row['package'])
         if summary:
-            value = {'author': value['author'], 'question': {'title': value['question']['title']}}
+            value = {'author': value['author'], 'question': {k:value['question'].get(k,'') for k in ['title','notebookTitle','questionNumber','contentKind']}}
         return {'id': row['id'], 'package': value, 'mine': row['owner'] == uid, 'likes': count, 'liked': liked}
 
 

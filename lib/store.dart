@@ -28,6 +28,7 @@ class StudyStore extends ChangeNotifier {
       },
     ));
     final data = jsonDecode(await rootBundle.loadString('assets/lessons.json')) as Json;
+    await db.execute('CREATE TABLE IF NOT EXISTS capture_records (lesson_id TEXT PRIMARY KEY, data TEXT NOT NULL)');
     final store = StudyStore(db, (data['lessons'] as List).map((e) => Lesson(e as Json)).toList());
     await store.refresh();
     return store;
@@ -60,9 +61,10 @@ class StudyStore extends ChangeNotifier {
     await refresh();
   }
 
-  Future<void> merge(Iterable<StudyEvent> incoming) async {
+  Future<void> merge(Iterable<StudyEvent> incoming, {Map<String,String> captures = const {}}) async {
     final validated = incoming.map((event) => StudyEvent.fromJson(event.toJson())).toList();
     await db.transaction((tx) async {
+      for(final capture in captures.entries){await tx.insert('capture_records',{'lesson_id':capture.key,'data':capture.value},conflictAlgorithm:ConflictAlgorithm.replace);}
       for (final e in validated) {
         final existing = await tx.query('events', where: 'id = ?', whereArgs: [e.id]);
         final encoded = jsonEncode(e.payload);
@@ -93,14 +95,21 @@ class StudyStore extends ChangeNotifier {
 
   String backup() => encodeBackup(events);
 
-  Future<String> saveQuestion(Json input, {String? id}) async {
-    final data = validateQuestion(input);
+  Future<String> saveQuestion(Json input, {String? id, Json? capture}) async {
+    final prepared = {...input};
+    final book = prepared['notebookId'] as String? ?? '';
+    if (book.isNotEmpty && (prepared['questionNumber'] ?? '') == '') {
+      final maxNumber = questions.values.where((q) => q['notebookId'] == book)
+        .fold<int>(0, (n,q) { final v = int.tryParse(q['questionNumber'] as String? ?? '') ?? 0; return n > v ? n : v; });
+      prepared['questionNumber'] = '${maxNumber + 1}';
+    }
+    final data = validateQuestion(prepared);
     final key = id ?? 'user-${newId()}';
     if (id != null && !questions.containsKey(id)) throw const FormatException('找不到可编辑的题目');
     final latest = events.where((e) => e.lessonId == key).fold<int>(0, (value, e) => e.at > value ? e.at : value);
     final now = DateTime.now().millisecondsSinceEpoch;
     await merge([StudyEvent(id: newId(), lessonId: key, type: 'question',
-      at: now > latest ? now : latest + 1, payload: data)]);
+      at: now > latest ? now : latest + 1, payload: data)],captures:capture==null?const {}:{key:jsonEncode({...capture,'user_confirmed':data})});
     return key;
   }
 
@@ -112,7 +121,10 @@ class StudyStore extends ChangeNotifier {
 
   Future<String> importQuestionPackage(String raw) async {
     final package = decodeQuestionPackage(raw);
-    final existing = questions.entries.where((e) => e.value['origin'] == package['id'] && e.value['deleted'] == false).firstOrNull;
+    final incoming = package['question'] as Json;
+    final existing = questions.entries.where((e) => e.value['deleted'] == false &&
+      (e.value['origin'] == package['id'] || ((incoming['notebookId'] as String).isNotEmpty &&
+       e.value['notebookId'] == incoming['notebookId'] && e.value['questionNumber'] == incoming['questionNumber']))).firstOrNull;
     if (existing != null) return existing.key; // Never overwrite a reader's own edits.
     final data = package['question'] as Json;
     final source = '分享者：${package['author']}\n${data['source']}';

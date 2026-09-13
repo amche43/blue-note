@@ -50,10 +50,15 @@ def run():
             broken=dict(question,id='f'*32,payload=dict(fields,prompt=''))
             try:post([broken],schema=2);raise AssertionError('Empty question accepted')
             except urllib.error.HTTPError as error:assert error.code==400
+            notebook=dict(question,id='1'*32,payload=dict(fields,notebookId='book-'+'2'*32,notebookTitle='数学错题本',questionNumber='12',contentKind='knowledge',firstThought='先回想再核对'))
+            assert len(post([notebook],schema=2)['events'])==4
+            invalid_book=dict(notebook,id='3'*32,payload=dict(notebook['payload'],questionNumber='0'))
+            try:post([invalid_book],schema=2);raise AssertionError('Invalid notebook number accepted')
+            except urllib.error.HTTPError as error:assert error.code==400
             process.terminate();process.wait(timeout=10)
             process=start()
             restored=post([],schema=2)
-            assert restored['schemaVersion']==2 and len(restored['events'])==3
+            assert restored['schemaVersion']==2 and len(restored['events'])==4
             assert next(e for e in restored['events'] if e['type']=='question')['payload']['title']=='自己的题目'
             print('PASS: authentication, two-device merge, idempotency, atomic conflicts, restart persistence, v1/v2 migration and custom questions')
         finally:

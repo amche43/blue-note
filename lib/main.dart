@@ -8,15 +8,22 @@ import 'domain.dart';
 import 'store.dart';
 import 'question_editor.dart';
 import 'community.dart';
+import 'study_tools.dart';
+import 'notebooks.dart';
+import 'knowledge_page.dart';
+import 'workbench.dart';
+import 'brand.dart';
+import 'entry_composer.dart';
+import 'studio_shell.dart';
 
-const inkBlue = Color(0xff315eb1);
-const paper = Color(0xfffaf9f5);
+const inkBlue = Color(0xff2878f0);
+const paper = Color(0xfff8fbff);
 const bluePaper = Color(0xffedf2fb);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    runApp(BlueNoteApp(store: await StudyStore.open()));
+    runApp(BlueNoteApp(store: await StudyStore.open(),showWelcome:true));
   } catch (_) {
     runApp(const MaterialApp(home: Scaffold(body: SafeArea(child: Center(
       child: Padding(padding: EdgeInsets.all(24), child: Text('暂时无法打开学习记录。请关闭后重试；不要卸载应用，以免丢失本地笔记。')),
@@ -26,25 +33,34 @@ void main() async {
 
 class BlueNoteApp extends StatelessWidget {
   final StudyStore store;
-  const BlueNoteApp({super.key, required this.store});
+  final bool showWelcome;
+  const BlueNoteApp({super.key, required this.store,this.showWelcome=false});
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: '蓝笔', debugShowCheckedModeBanner: false,
     locale: const Locale('zh', 'CN'), supportedLocales: const [Locale('zh', 'CN')],
     localizationsDelegates: GlobalMaterialLocalizations.delegates,
-    theme: ThemeData(
+    theme: blueNoteTheme(),
+    home: showWelcome?WelcomePage(store:store,child:HomePage(store:store)):HomePage(store: store),
+  );
+}
+
+ThemeData blueNoteTheme() => ThemeData(
       useMaterial3: true, scaffoldBackgroundColor: paper,
-      colorScheme: ColorScheme.fromSeed(seedColor: inkBlue, surface: paper),
+      colorScheme: ColorScheme.fromSeed(seedColor: inkBlue, surface: paper).copyWith(primary:inkBlue,onPrimary:Colors.white),
       appBarTheme: const AppBarTheme(backgroundColor: paper, surfaceTintColor: Colors.transparent),
       textTheme: const TextTheme(bodyMedium: TextStyle(fontSize: 16, height: 1.7), bodyLarge: TextStyle(fontSize: 17, height: 1.7)),
       filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(
-        minimumSize: const Size(double.infinity, 52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)))),
+        minimumSize: const Size(0, 52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)))),
+      segmentedButtonTheme: SegmentedButtonThemeData(style: ButtonStyle(
+        backgroundColor: WidgetStateProperty.resolveWith((states)=>states.contains(WidgetState.selected)?inkBlue:Colors.white),
+        foregroundColor: WidgetStateProperty.resolveWith((states)=>states.contains(WidgetState.selected)?Colors.white:Colors.blueGrey),
+        side: const WidgetStatePropertyAll(BorderSide(color:Color(0xffe3ecfa))),
+        textStyle: const WidgetStatePropertyAll(TextStyle(fontSize:13)),
+      )),
       inputDecorationTheme: InputDecorationTheme(filled: true, fillColor: Colors.white,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none)),
-    ),
-    home: HomePage(store: store),
-  );
-}
+    );
 
 void message(BuildContext context, String text) => ScaffoldMessenger.of(context)
   ..hideCurrentSnackBar()
@@ -76,13 +92,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void dispose() {
     timer?.cancel(); store.removeListener(changed); WidgetsBinding.instance.removeObserver(this); super.dispose();
   }
-  void open(Lesson lesson, {bool review = false}) => Navigator.push(context,
-    MaterialPageRoute<void>(builder: (_) => LessonPage(store: store, lesson: lesson, review: review)));
+  Future<void> open(Lesson lesson, {bool review = false}) async {
+    try {await store.setting('lastOpenedLesson',lesson.id);} catch (_) { /* Learning can continue if this convenience setting fails. */ }
+    if(!mounted)return;
+    await Navigator.push(context,MaterialPageRoute<void>(builder: (_) => store.questions[lesson.id]?['contentKind']=='knowledge' ? KnowledgePage(store:store,id:lesson.id) : LessonPage(store: store, lesson: lesson, review: review)));
+  }
   Future<void> addQuestion() async {
     final id = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => QuestionEditor(store: store)));
     if (!mounted || id == null) return;
     final lesson = store.lessons.where((lesson) => lesson.id == id).firstOrNull;
     if (lesson != null) open(lesson);
+  }
+  Future<void> recordContent()async{
+    final id=await Navigator.push<String>(context,MaterialPageRoute(builder:(_)=>EntryComposer(store:store)));
+    if(!mounted||id==null)return;
+    final lesson=store.lessons.where((l)=>l.id==id).firstOrNull;
+    if(lesson!=null)open(lesson);
   }
   Future<void> importQuestion() async {
     final id = await importQuestionDialog(context, store);
@@ -105,15 +130,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     )));
   }
 
+  void studyCenter() => Navigator.push<void>(context, MaterialPageRoute(builder: (_) => StudyCenter(store: store, openLesson: (lesson, review) => open(lesson, review: review))));
+
   List<Widget> today() {
     final due = store.due;
     final unseen = store.lessons.where((l) => store.progress(l.id).attempts == 0).toList();
     final next = due.isNotEmpty ? due.first : unseen.isNotEmpty ? unseen.first : store.lessons.first;
     final learned = store.lessons.where((l) => store.progress(l.id).attempts > 0).length;
     return [
+      LearningWorkbench(store:store,open:(lesson)=>open(lesson),create:recordContent),
+
       const Eyebrow('把想通的那一步，留给下一次'),
       const SizedBox(height: 12),
-      const Text('今天，补上\n一个卡点。', style: TextStyle(fontSize: 34, height: 1.4, fontWeight: FontWeight.w600)),
+      const Text('补上一个卡点', style: TextStyle(fontSize: 21, height: 1.4, fontWeight: FontWeight.w600)),
       const SizedBox(height: 28),
       BlueBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(due.isNotEmpty ? '到期复习 · ${due.length} 个卡点' : '下一段学习', style: const TextStyle(color: inkBlue)),
@@ -132,6 +161,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       const SizedBox(height: 22),
       FilledButton(onPressed: () => open(next, review: due.isNotEmpty), child: Text(due.isNotEmpty ? '开始复习 →' : '开始学习 →')),
       const SizedBox(height: 24),
+      OutlinedButton.icon(onPressed: studyCenter, icon: const Icon(Icons.psychology_outlined), label: const Text('复习中心 · 收藏与回想')),
+      const SizedBox(height: 12),
       Text('已练习 $learned / ${store.lessons.length} 个学习单元', style: const TextStyle(color: Colors.black54)),
       if (due.isNotEmpty) ...[const SizedBox(height: 24), const Text('该回想的卡点', style: TextStyle(fontSize: 20)),
         const SizedBox(height: 12), ...due.map((l) => listTile(l, review: true))],
@@ -141,7 +172,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   List<Widget> library({bool notes = false}) {
     final filtered = store.lessons.where((l) => (subject == '全部' || l.subject == subject) &&
-      '${l.title} ${l.chapter} ${l.prompt} ${l.blue.values.join(' ')} ${store.progress(l.id).note ?? ''}'.contains(query) &&
+      '${l.title} ${l.chapter} ${l.prompt} ${l.blue.values.join(' ')} ${store.questions[l.id]?['notebookTitle'] ?? ''} ${store.progress(l.id).note ?? ''}'.contains(query) &&
       (!notes || (store.progress(l.id).note?.isNotEmpty ?? false))).toList();
     return [
       Text(notes ? '我的蓝笔本' : '从例题出发', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
@@ -151,7 +182,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         TextButton.icon(onPressed: importQuestion, icon: const Icon(Icons.download_outlined), label: const Text('导入题目包'))],
       const SizedBox(height: 18),
       TextFormField(key: ValueKey('search-$tab'), initialValue: query, decoration: const InputDecoration(
-        hintText: '搜索方法、章节或笔记', prefixIcon: Icon(Icons.search)), onChanged: (v) => setState(() => query = v)),
+        hintText: '搜索学习本、方法、章节或笔记', prefixIcon: Icon(Icons.search)), onChanged: (v) => setState(() => query = v)),
+      if(!notes&&query.trim().isNotEmpty)...notebooks(store).entries.where((e)=>e.value.contains(query.trim())).map((b)=>ListTile(leading:const Icon(Icons.menu_book_outlined),title:Text(b.value),subtitle:const Text('我的学习本'),onTap:()=>Navigator.push<void>(context,MaterialPageRoute(builder:(_)=>NotebooksPage(store:store,knowledge:isKnowledgeBook(store,b.key),initialBook:b.key,openLesson:(lesson)=>open(lesson)))))),
       const SizedBox(height: 12),
       Wrap(spacing: 8, children: ['全部', ...store.lessons.map((e) => e.subject).toSet()].map((s) => ChoiceChip(
         label: Text(s), selected: subject == s, onSelected: (_) => setState(() => subject = s))).toList()),
@@ -163,12 +195,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   List<Widget> mine() => [
-    const Text('学习，也留有余地。', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
+    const Row(children:[BlueAvatar(width:52),SizedBox(width:16),Expanded(child:Text('我的学习成果',style:TextStyle(fontSize:28,fontWeight:FontWeight.w600)))]),
     const SizedBox(height: 14),
-    const Text('蓝笔 0.3 · 我的题库\n例题、笔记与复习均可离线使用。'),
+    const Text('蓝笔 0.7 · 我的题库\n例题、笔记与复习均可离线使用。'),
     const SizedBox(height: 22),
     ListTile(leading: const Icon(Icons.add_circle_outline), title: const Text('添加我的题目'), subtitle: const Text('保存题干、解答与关键点，默认私有'), onTap: addQuestion),
-    ListTile(leading: const Icon(Icons.people_outline), title: const Text('共享题库'), subtitle: const Text('本机测试 · 发布、下载与交流'), onTap: () => Navigator.push<void>(context, MaterialPageRoute(builder: (_) => CommunityPage(store: store)))),
+    ListTile(leading: const Icon(Icons.library_books_outlined), title: const Text('我的错题本'), subtitle: const Text('自建本子，按固定题号整理和分享'), onTap: () => Navigator.push<void>(context,MaterialPageRoute(builder: (_) => NotebooksPage(store:store,openLesson:(lesson)=>open(lesson))))),
+    ListTile(leading: const Icon(Icons.style_outlined),title:const Text('必备知识点本'),subtitle:const Text('自由创作知识卡片，先回想再展开'),onTap:()=>Navigator.push<void>(context,MaterialPageRoute(builder:(_)=>NotebooksPage(store:store,knowledge:true,openLesson:(lesson)=>open(lesson))))),
+    ListTile(leading: const Icon(Icons.psychology_outlined), title: const Text('复习与回想'), subtitle: const Text('按卡点筛选、收藏与混合练习'), onTap: studyCenter),
+    ListTile(leading: const Icon(Icons.people_outline), title: const Text('学习大厅 · 共享题库'), subtitle: const Text('搜索公开本子，点赞、收藏与交流'), onTap: () => Navigator.push<void>(context, MaterialPageRoute(builder: (_) => CommunityPage(store: store)))),
     ListTile(leading: const Icon(Icons.feedback_outlined), title: const Text('我的纠错反馈'), subtitle: const Text('查看提交状态与处理回复'), onTap: () => Navigator.push<void>(context, MaterialPageRoute(builder: (_) => CommunityPage(store: store, feedbackOnly: true)))),
     ListTile(leading: const Icon(Icons.copy_outlined), title: const Text('导出备份'), subtitle: const Text('复制自建题目、笔记与学习记录'), onTap: () => backupDialog(context, store)),
     ListTile(leading: const Icon(Icons.restore), title: const Text('恢复备份'), subtitle: const Text('合并记录，重复内容不重复计数'), onTap: () => importDialog(context, store)),
@@ -179,25 +214,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     const SizedBox(height: 10),
     const Text('首批 7 个单元、16 道变式，覆盖高数、数据结构与计算机网络。部分内容根据你旧对话中的疑问重新编写，具体来源附在每道例题后。'),
     const SizedBox(height: 12),
-    const Text('支持手动录题、编辑关键点、经你同意后复制题目包分享。相关知识点仅按关键词匹配参考例题。共享题库、评论、点赞和纠错反馈需连接本机测试后台。拍照识别尚未接入。'),
+    const Text('支持手动录题、编辑关键点、经你同意后复制题目包分享。相关知识点仅按关键词匹配参考例题。共享题库、评论、点赞和纠错反馈需连接本机测试后台。支持本机照片文字识别，复杂公式和图形仍需核对。'),
     const SizedBox(height: 12),
     const Text('复习采用首版间隔规则，参考作答与求助情况安排。点过答案不会被直接算作独立掌握。'),
-    TextButton(onPressed: () => showLicensePage(context: context, applicationName: '蓝笔', applicationVersion: '0.3.0'), child: const Text('开源许可')),
+    TextButton(onPressed: () => showLicensePage(context: context, applicationName: '蓝笔', applicationVersion: '0.7.0'), child: const Text('开源许可')),
   ];
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('蓝笔', style: TextStyle(color: inkBlue, letterSpacing: 4, fontWeight: FontWeight.w600)),
-      actions: const [Padding(padding: EdgeInsets.only(right: 20), child: Center(child: Text('每次想通一点', style: TextStyle(fontSize: 12, color: Colors.black54))))]),
-    body: SafeArea(child: Align(alignment: Alignment.topCenter, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 640),
-      child: ListView(key: ValueKey(tab), padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
-        children: switch(tab) {0 => today(), 1 => library(), 2 => library(notes: true), _ => mine()})))),
-    bottomNavigationBar: NavigationBar(selectedIndex: tab, onDestinationSelected: (v) => setState(() {tab = v; query = ''; subject = '全部';}),
-      destinations: const [NavigationDestination(icon: Icon(Icons.wb_sunny_outlined), label: '今日'),
-        NavigationDestination(icon: Icon(Icons.auto_stories_outlined), label: '学习'),
-        NavigationDestination(icon: Icon(Icons.edit_note), label: '蓝笔本'),
-        NavigationDestination(icon: Icon(Icons.person_outline), label: '我的')]),
-  );
+  Widget build(BuildContext context) => tab>=5?Scaffold(
+    appBar:AppBar(title:Text(tab==5?'学习与搜索':tab==6?'工具与设置':'例题与复习'),leading:IconButton(icon:const Icon(Icons.arrow_back),onPressed:()=>setState(()=>tab=0))),
+    body:ListView(padding:const EdgeInsets.all(20),children:tab==5?library():tab==6?mine():today())):
+    StudioShell(store:store,open:(lesson)=>open(lesson),record:recordContent,library:()=>setState(()=>tab=5),settings:()=>setState(()=>tab=6),practice:studyCenter);
+
 }
 
 class Eyebrow extends StatelessWidget {
@@ -255,7 +283,7 @@ class _LessonPageState extends State<LessonPage> {
   int hints = 0, steps = 0, variant = 0;
   int? selected;
   bool practice = false, assisted = false, busy = false, recorded = false;
-  String reason = '没想到用';
+  String reason = '暂未判断';
   final scroll = ScrollController();
   Lesson get lesson => widget.store.lessons.where((lesson) => lesson.id == widget.lesson.id).firstOrNull ?? widget.lesson;
   Future<void> editQuestion() async {
@@ -290,6 +318,7 @@ class _LessonPageState extends State<LessonPage> {
     Eyebrow('${lesson.subject} · ${lesson.chapter}'), const SizedBox(height: 12),
     Text(widget.store.guided ? lesson.title : '例题 · 独立思考', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
     const SizedBox(height: 20), Text(lesson.prompt), Formula(lesson.formula),
+    if(lesson.data['custom']==true)...{'firstThought':'我的第一反应','errorReason':'错误原因','summary':'一句话总结'}.entries.where((e)=>(widget.store.questions[lesson.id]?[e.key] as String? ?? '').isNotEmpty).map((e)=>Padding(padding:const EdgeInsets.only(top:16),child:SelectableText('${e.value}\n${widget.store.questions[lesson.id]![e.key]}'))),
     if (hints > 0) ...[BlueBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('提示 $hints / ${lesson.hints.length}', style: const TextStyle(color: inkBlue)),
       const SizedBox(height: 8), Text(lesson.hints[hints - 1]),
@@ -361,7 +390,7 @@ class _LessonPageState extends State<LessonPage> {
         const SizedBox(height: 18),
         if (!recorded) ...[
           const Text('这次主要卡在哪里？', style: TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 10), Wrap(spacing: 6, children: ['没想到用','忘记了','条件理解错','计算出错','没有卡住'].map((r) => ChoiceChip(
+          const SizedBox(height: 10), Wrap(spacing: 6, children: ['暂未判断','没想到用','忘记了','条件理解错','计算出错','没有卡住'].map((r) => ChoiceChip(
             label: Text(r), selected: reason == r, onSelected: busy ? null : (_) => setState(() => reason = r))).toList()),
           const SizedBox(height: 16),
           FilledButton(onPressed: busy ? null : () => record(correct ? 'good' : 'again'), child: Text(busy ? '正在保存…' : correct ? '完成本题，安排复习' : '记下卡点，稍后再练')),
@@ -369,7 +398,7 @@ class _LessonPageState extends State<LessonPage> {
         ] else ...[
           Text('已保存 · ${dueLabel(widget.store.progress(lesson.id).due)}', style: const TextStyle(color: inkBlue)),
           const SizedBox(height: 12),
-          FilledButton(onPressed: () {setState(() {variant = (variant+1) % lesson.variants.length; selected = null; recorded = false; reason = '没想到用';}); top();}, child: const Text('继续下一道变式')),
+          FilledButton(onPressed: () {setState(() {variant = (variant+1) % lesson.variants.length; selected = null; recorded = false; reason = '暂未判断';}); top();}, child: const Text('继续下一道变式')),
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('今天先到这里')),
         ],
         TextButton(onPressed: () => editNote(context, widget.store, lesson), child: const Text('补充我的蓝笔总结')),
@@ -378,7 +407,23 @@ class _LessonPageState extends State<LessonPage> {
   }
   @override Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text(practice ? '举一反三' : widget.store.guided ? '循序渐进' : '直接挑战'),
-      actions: [IconButton(tooltip: '纠错反馈', icon: const Icon(Icons.feedback_outlined), onPressed: () => createFeedback(context, widget.store, lesson.id, lesson.title)), if (lesson.data['custom'] == true) ...[
+      actions: [PopupMenuButton<String>(tooltip: '更多学习工具', onSelected: (value) async {
+        if (value == 'feedback') { await createFeedback(context, widget.store, lesson.id, lesson.title); }
+        if (value == 'recall' && context.mounted) {
+          setState(() => assisted = true);
+          await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => RecallPage(store: widget.store, lesson: lesson)));
+        }
+        if (value == 'favorite') {
+          try {
+            await widget.store.setting('favorite:${lesson.id}', widget.store.settings['favorite:${lesson.id}'] == 'true' ? 'false' : 'true');
+            if (mounted) setState(() {});
+          } catch (_) { if (context.mounted) message(context, '收藏未保存，请重试'); }
+        }
+      }, itemBuilder: (_) => [
+        PopupMenuItem(value: 'favorite', child: Text(widget.store.settings['favorite:${lesson.id}'] == 'true' ? '取消收藏' : '收藏这道题')),
+        const PopupMenuItem(value: 'recall', child: Text('关键点回想')),
+        const PopupMenuItem(value: 'feedback', child: Text('纠错反馈')),
+      ]), if (lesson.data['custom'] == true) ...[
         IconButton(tooltip: '编辑题目', icon: const Icon(Icons.edit_outlined), onPressed: editQuestion),
         IconButton(tooltip: '分享题目包', icon: const Icon(Icons.share_outlined), onPressed: () => shareQuestionDialog(context, widget.store, lesson.id)),
       ], IconButton(tooltip: '蓝笔总结', icon: const Icon(Icons.edit_note), onPressed: () {

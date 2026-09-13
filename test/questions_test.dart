@@ -70,7 +70,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize); addTearDown(tester.view.resetDevicePixelRatio);
     final store = (await tester.runAsync(() => StudyStore.open(factory: databaseFactoryFfiNoIsolate, path: inMemoryDatabasePath)))!;
     await tester.pumpWidget(BlueNoteApp(store: store)); await tester.pumpAndSettle();
-    await tester.tap(find.text('学习')); await tester.pumpAndSettle();
+    await tester.tap(find.text('搜索学习本、知识点、题目…')); await tester.pumpAndSettle();
     await tester.tap(find.text('添加我的题目')); await tester.pumpAndSettle();
     expect(find.byType(QuestionEditor), findsOneWidget);
     await tester.enterText(find.byKey(const ValueKey('question-title')), '一题待整理');

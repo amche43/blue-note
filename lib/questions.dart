@@ -5,6 +5,9 @@ const questionLimits = <String, int>{
   'title': 120, 'subject': 60, 'chapter': 120, 'prompt': 18000,
   'formula': 4000, 'answer': 18000, 'trigger': 4000, 'action': 4000,
   'conditions': 4000, 'pitfall': 4000, 'source': 1000, 'origin': 80,
+  'notebookId': 40, 'notebookTitle': 80, 'questionNumber': 10,
+  'contentKind': 16,
+  'firstThought':4000,'errorReason':4000,'summary':4000,
 };
 
 /// Flat, bounded fields keep backups portable and never execute imported text.
@@ -14,7 +17,7 @@ Json validateQuestion(Object? value) {
   }
   final result = <String, dynamic>{};
   for (final field in questionLimits.entries) {
-    final text = value[field.key];
+    final text = value[field.key] ?? (field.key == 'contentKind' ? 'question' : ['notebookId','notebookTitle','questionNumber','firstThought','errorReason','summary'].contains(field.key) ? '' : null);
     if (text is! String || text.length > field.value) {
       throw FormatException('${field.key} 内容缺失或过长');
     }
@@ -24,11 +27,19 @@ Json validateQuestion(Object? value) {
     throw const FormatException('请填写题目名称、科目和完整题干');
   }
   result['deleted'] = value['deleted'];
+  if (!['question','knowledge'].contains(result['contentKind'])) throw const FormatException('内容类型不正确');
+  final book = result['notebookId'] as String;
+  if (book.isNotEmpty && (!RegExp(r'^book-[a-f0-9]{32}$').hasMatch(book) ||
+      (result['notebookTitle'] as String).isEmpty ||
+      !RegExp(r'^[1-9][0-9]{0,8}$').hasMatch(result['questionNumber'] as String))) {
+    throw const FormatException('错题本或题号格式不正确');
+  }
+  if (book.isEmpty && (result['notebookTitle'] != '' || result['questionNumber'] != '')) throw const FormatException('题号需要关联错题本');
   return result;
 }
 
 Json blankQuestion() => {for (final key in questionLimits.keys) key: '',
-  'subject': '高等数学', 'deleted': false};
+  'subject': '高等数学', 'deleted': false, 'contentKind': 'question'};
 
 Lesson questionLesson(String id, Json question) {
   final q = validateQuestion(question);

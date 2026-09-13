@@ -56,6 +56,19 @@ public final class BlueNoteServer {
         }
         for (String required : List.of("title", "subject", "prompt"))
           if (((String)payload.get(required)).isBlank()) throw new IllegalArgumentException("Empty question field");
+        for (var field : Map.of("notebookId",40,"notebookTitle",80,"questionNumber",10).entrySet())
+          if (payload.containsKey(field.getKey()) && (!(payload.get(field.getKey()) instanceof String text) || text.length()>field.getValue()))
+            throw new IllegalArgumentException("Invalid notebook field");
+        String book = payload.get("notebookId") instanceof String bookValue ? bookValue : "";
+        for (String field : List.of("firstThought","errorReason","summary"))
+          if (payload.containsKey(field) && (!(payload.get(field) instanceof String thought) || thought.length()>4000))
+            throw new IllegalArgumentException("Invalid personal thought");
+        if (payload.containsKey("contentKind") && !List.of("question","knowledge").contains(payload.get("contentKind")))
+          throw new IllegalArgumentException("Invalid content kind");
+        String title = payload.get("notebookTitle") instanceof String titleValue ? titleValue : "";
+        String number = payload.get("questionNumber") instanceof String numberValue ? numberValue : "";
+        if ((!book.isEmpty() && (!book.matches("book-[a-f0-9]{32}") || title.isBlank() || !number.matches("[1-9][0-9]{0,8}"))) ||
+            (book.isEmpty() && (!title.isEmpty() || !number.isEmpty()))) throw new IllegalArgumentException("Invalid notebook reference");
       } else throw new IllegalArgumentException("Invalid event type");
       var previous = result.putIfAbsent(id,e);
       if (previous != null && !previous.equals(e)) throw new IllegalArgumentException("Conflicting event ID");

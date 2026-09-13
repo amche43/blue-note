@@ -48,6 +48,9 @@ app.*.map.json
 .widget_preview/
 # Personal server data and signing material must not be published.
 server/data/
+__pycache__/
+.venv/
+*.apk
 *.jks
 *.keystore
 *.class

@@ -98,6 +98,7 @@ class Progress {
   final List<StudyEvent> noteHistory = [];
   Progress.fromEvents(Iterable<StudyEvent> input) {
     final events = input.toList()..sort(compareEvents);
+    int? lastCredit;
     for (final event in events) {
       if (event.type == 'question') continue;
       if (event.type == 'note') {
@@ -110,10 +111,16 @@ class Progress {
       final rating = p['rating'];
       final passed = p['correct'] == true && p['assisted'] == false && rating == 'good';
       if (passed) {
-        independent++;
-        status = '独立完成 $independent 次';
+        if (lastCredit == null || event.at - lastCredit >= const Duration(hours: 24).inMilliseconds) {
+          independent++;
+          lastCredit = event.at;
+          status = '独立验证 $independent 次';
+        } else {
+          status = '本轮答对 · 待隔后验证';
+        }
       } else {
         independent = 0;
+        lastCredit = null;
         status = rating == 'again' || p['correct'] != true ? '需要再练' : '借助提示完成';
       }
       // Explicit conservative v1 schedule, not an implementation of FSRS.
@@ -121,7 +128,7 @@ class Progress {
           ? const Duration(minutes: 10)
           : !passed ? const Duration(days: 1)
           : Duration(days: [1, 3, 7, 14, 30][min(independent - 1, 4)]);
-      due = DateTime.fromMillisecondsSinceEpoch(event.at).add(delay);
+      due = DateTime.fromMillisecondsSinceEpoch(passed ? lastCredit! : event.at).add(delay);
     }
   }
 }

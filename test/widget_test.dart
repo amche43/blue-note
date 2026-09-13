@@ -15,8 +15,8 @@ void main() {
     final store=(await tester.runAsync(() => StudyStore.open(factory:databaseFactoryFfiNoIsolate,path:inMemoryDatabasePath)))!;
     await store.setting('mode','challenge');
     await tester.pumpWidget(BlueNoteApp(store:store));await tester.pumpAndSettle();
-    expect(find.text('今天，补上\n一个卡点。'),findsOneWidget);
-    await tester.tap(find.text('开始学习 →'));await tester.pumpAndSettle();
+    expect(find.text('继续学习'),findsOneWidget);
+    await tester.tap(find.text('继续学习 ›'));await tester.pumpAndSettle();
     expect(find.text('我做完了，核对解答'),findsOneWidget);
     await tester.scrollUntilVisible(find.text('直接试做变式 →'),200,scrollable:find.byType(Scrollable).first);await tester.tap(find.text('直接试做变式 →'));await tester.pumpAndSettle();
     await tester.tap(find.text('A   π/4'));await tester.pumpAndSettle();

@@ -1,0 +1,2 @@
+# Optional CPU OCR. Install in an isolated environment; model files are bundled.
+rapidocr_onnxruntime==1.4.4
