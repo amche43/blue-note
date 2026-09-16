@@ -19,8 +19,29 @@ import java.io.ByteArrayInputStream
 class MainActivity : FlutterActivity() {
     private var pending: MethodChannel.Result? = null
     private var cameraFile: File? = null
+    private var backupPending: MethodChannel.Result? = null
+    private var backupBytes: ByteArray? = null
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
+        MethodChannel(engine.dartExecutor.binaryMessenger, "blue_note/backup").setMethodCallHandler { call, result ->
+            if (call.method != "save" && call.method != "open") { result.notImplemented(); return@setMethodCallHandler }
+            if (backupPending != null) { result.error("busy", "正在处理备份文件", null); return@setMethodCallHandler }
+            try {
+                val saving = call.method == "save"
+                backupBytes = if(saving) call.argument<ByteArray>("bytes") else null
+                if(saving && (backupBytes == null || backupBytes!!.size > 64*1024*1024)) throw Exception()
+                val intent = Intent(if(saving) Intent.ACTION_CREATE_DOCUMENT else Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = if(saving) "application/octet-stream" else "*/*"
+                    if(saving) putExtra(Intent.EXTRA_TITLE, call.argument<String>("name") ?: "blue-note.bluenote")
+                }
+                backupPending=result
+                startActivityForResult(intent, if(saving) 502 else 503)
+            } catch (_:Exception) {
+                backupPending=null;backupBytes=null
+                result.error("file", "无法打开文件选择器，或备份超过 64MB", null)
+            }
+        }
         MethodChannel(engine.dartExecutor.binaryMessenger, "blue_note/photo").setMethodCallHandler { call, result ->
             if (call.method != "pick" && call.method != "camera") { result.notImplemented(); return@setMethodCallHandler }
             if (pending != null) { result.error("busy", "已有照片正在处理", null); return@setMethodCallHandler }
@@ -45,6 +66,28 @@ class MainActivity : FlutterActivity() {
     }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode,resultCode,data)
+        if(requestCode==502 || requestCode==503) {
+            val callback=backupPending ?: return
+            if(resultCode!=Activity.RESULT_OK){backupPending=null;backupBytes=null;callback.success(null);return}
+            val payload=backupBytes;backupBytes=null
+            Thread {
+                try {
+                    val uri=data?.data ?: throw Exception()
+                    val result:Any = if(requestCode==502) {
+                        (contentResolver.openOutputStream(uri,"wt") ?: throw Exception()).use {it.write(payload ?: throw Exception());it.flush()}
+                        true
+                    } else {
+                        (contentResolver.openInputStream(uri) ?: throw Exception()).use {
+                            val output=ByteArrayOutputStream();val buffer=ByteArray(8192)
+                            while(true){val n=it.read(buffer);if(n<0)break;if(output.size()+n>64*1024*1024)throw Exception();output.write(buffer,0,n)}
+                            output.toByteArray()
+                        }
+                    }
+                    runOnUiThread {backupPending=null;callback.success(result)}
+                } catch (_:Exception) {runOnUiThread {backupPending=null;callback.error("file","文件读写失败或超过 64MB，请重试",null)}}
+            }.start()
+            return
+        }
         if(requestCode!=501)return
         val callback=pending ?: return
         val file=cameraFile; cameraFile=null

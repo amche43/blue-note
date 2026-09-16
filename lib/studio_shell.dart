@@ -4,11 +4,14 @@ import 'brand.dart';
 import 'community.dart';
 import 'collaboration_pages.dart';
 import 'account_page.dart';
+import 'avatar_page.dart';
 import 'contribution_calendar.dart';
 import 'domain.dart';
 import 'hall.dart';
 import 'notebooks.dart';
 import 'store.dart';
+import 'create_page.dart';
+import 'learning_profile_page.dart';
 
 const studioBlue = Color(0xff2878f0);
 
@@ -143,6 +146,27 @@ class _StudioShellState extends State<StudioShell> {
     Future<void>.delayed(const Duration(milliseconds: 350), name.dispose);
   }
 
+  bool refreshingProfile = false;
+  Future<void> refreshAccountAvatar() async {
+    final raw = store.settings['community'];
+    if (raw == null || refreshingProfile) return;
+    refreshingProfile = true;
+    try {
+      final me = await CommunityClient(
+        CommunityClient.parse(raw),
+      ).request('GET', '/v1/me');
+      if (!mounted || store.settings['community'] != raw) return;
+      final image = me['avatarImage'] as String? ?? '';
+      if (store.settings['avatarImage'] != image) {
+        await store.setting('avatarImage', image);
+      }
+    } catch (_) {
+      /* Keep the last confirmed avatar; the avatar page provides explicit refresh errors. */
+    } finally {
+      refreshingProfile = false;
+    }
+  }
+
   Future<void> editProfile() async {
     final name = TextEditingController(
       text: store.settings['profileName'] ?? '同学',
@@ -152,7 +176,7 @@ class _StudioShellState extends State<StudioShell> {
     );
     int avatar = int.tryParse(store.settings['avatar'] ?? '0') ?? 0;
     String error = '';
-    bool busy = false;
+    bool busy = false, avatarChanged = false;
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -179,7 +203,12 @@ class _StudioShellState extends State<StudioShell> {
                   children: List.generate(
                     8,
                     (i) => InkWell(
-                      onTap: busy ? null : () => update(() => avatar = i),
+                      onTap: busy
+                          ? null
+                          : () => update(() {
+                              avatar = i;
+                              avatarChanged = true;
+                            }),
                       child: Container(
                         padding: const EdgeInsets.all(3),
                         decoration: BoxDecoration(
@@ -196,7 +225,34 @@ class _StudioShellState extends State<StudioShell> {
                     ),
                   ),
                 ),
-                const Text('资料与头像目前保存在此设备。', style: TextStyle(fontSize: 11)),
+                TextButton.icon(
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          await Navigator.push<void>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AvatarPage(store: store),
+                            ),
+                          );
+                          if (ctx.mounted) {
+                            update(() {
+                              avatar =
+                                  int.tryParse(
+                                    store.settings['avatar'] ?? '0',
+                                  ) ??
+                                  0;
+                              avatarChanged = false;
+                            });
+                          }
+                        },
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: const Text('自定义头像'),
+                ),
+                const Text(
+                  '已连接时昵称、头像同步到账号，学习介绍保存在此设备。',
+                  style: TextStyle(fontSize: 11),
+                ),
                 if (error.isNotEmpty) Text(error),
               ],
             ),
@@ -212,12 +268,27 @@ class _StudioShellState extends State<StudioShell> {
                   : () async {
                       update(() => busy = true);
                       try {
+                        final raw = store.settings['community'];
+                        if (raw != null) {
+                          await CommunityClient(
+                            CommunityClient.parse(raw),
+                          ).request('PUT', '/v1/me', {
+                            'name': name.text.trim().isEmpty
+                                ? '同学'
+                                : name.text.trim(),
+                            'avatar': avatar,
+                            'useDefault': avatarChanged,
+                          });
+                        }
                         await store.setting(
                           'profileName',
                           name.text.trim().isEmpty ? '同学' : name.text.trim(),
                         );
                         await store.setting('profileBio', bio.text.trim());
                         await store.setting('avatar', '$avatar');
+                        if (avatarChanged) {
+                          await store.setting('avatarImage', '');
+                        }
                         if (ctx.mounted) Navigator.pop(ctx);
                         if (mounted) setState(() {});
                       } catch (_) {
@@ -567,6 +638,7 @@ class _StudioShellState extends State<StudioShell> {
                   shape: BoxShape.circle,
                 ),
                 child: BlueAvatar(
+                  photo: store.settings['avatarImage'],
                   index: int.tryParse(store.settings['avatar'] ?? '0') ?? 0,
                   width: 64,
                 ),
@@ -616,6 +688,20 @@ class _StudioShellState extends State<StudioShell> {
       ),
       const SizedBox(height: 24),
       ContributionCalendar(store: store),
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(
+          Icons.workspace_premium_outlined,
+          color: studioBlue,
+        ),
+        title: const Text('成就与开放学习履历'),
+        subtitle: const Text('记录创造、维护与共建成果'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.push<void>(
+          context,
+          MaterialPageRoute(builder: (_) => LearningProfilePage(store: store)),
+        ),
+      ),
       section('我的学习成果'),
       Wrap(
         spacing: 8,
@@ -746,6 +832,12 @@ class _StudioShellState extends State<StudioShell> {
               ? explore()
               : tab == 3
               ? notifications()
+              : tab == 2
+              ? CreatePage(
+                  store: store,
+                  createBook: addBook,
+                  openLesson: widget.open,
+                )
               : ListView(
                   key: ValueKey('studio-$tab'),
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
@@ -769,33 +861,7 @@ class _StudioShellState extends State<StudioShell> {
                 child: Center(
                   child: IconButton.filled(
                     tooltip: '添加',
-                    onPressed: () => showModalBottomSheet<void>(
-                      context: context,
-                      showDragHandle: true,
-                      builder: (ctx) => SafeArea(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ListTile(
-                              leading: const Icon(Icons.library_add_outlined),
-                              title: const Text('创建学习本'),
-                              onTap: () {
-                                Navigator.pop(ctx);
-                                addBook();
-                              },
-                            ),
-                            ListTile(
-                              leading: const Icon(Icons.edit_note),
-                              title: const Text('记录新的学习内容'),
-                              onTap: () {
-                                Navigator.pop(ctx);
-                                widget.record();
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                    onPressed: () => setState(() => tab = 2),
                     icon: const Icon(Icons.add, size: 28),
                   ),
                 ),
@@ -803,10 +869,13 @@ class _StudioShellState extends State<StudioShell> {
             }
             return Expanded(
               child: InkWell(
-                onTap: () => setState(() {
-                  tab = i;
-                  exploreSaved = false;
-                }),
+                onTap: () {
+                  setState(() {
+                    tab = i;
+                    exploreSaved = false;
+                  });
+                  if (i == 4) refreshAccountAvatar();
+                },
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -879,13 +948,7 @@ class _WelcomePageState extends State<WelcomePage> {
                         ),
                       ),
                       const SizedBox(height: 30),
-                      const BrandCrop(
-                        sheet: 'ui-reference',
-                        region: Rect.fromLTWH(44, 460, 183, 225),
-                        width: 200,
-                        sourceWidth: 1491,
-                        sourceHeight: 1055,
-                      ),
+                      const BlueMascot(width: 200),
                       const SizedBox(height: 22),
                       const Text(
                         'Blue-note 蓝笔',

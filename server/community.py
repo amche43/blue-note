@@ -64,6 +64,8 @@ def initialize(path):
         collaboration.initialize(db)
         import accounts
         accounts.initialize(db)
+        import avatar_review
+        avatar_review.initialize(db)
 
 
 def provision(path, name):
@@ -176,6 +178,18 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlsplit(self.path)
         path, method = parsed.path, self.command
         uid = user['id']
+        import notebook_forks
+        result=notebook_forks.route(db,uid,method,path,body,Invalid)
+        if result is not None:return result
+        import learning_profile
+        result=learning_profile.route(db,uid,method,path,body,Invalid)
+        if result is not None:return result
+        import improvements
+        result=improvements.route(db,uid,method,path,body,Invalid,text,request_id)
+        if result is not None:return result
+        import avatar_review
+        result=avatar_review.route(db,uid,method,path,body,Invalid,request_id)
+        if result is not None: return result
         import collaboration
         result = collaboration.route(db, uid, method, path, body, Invalid, text, request_id)
         if result is not None:
@@ -200,7 +214,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 raise Invalid('分页不正确')
             sql = '''WITH catalog AS (
-              SELECT b.id,b.title,u.name,count(q.id) AS count,max(q.created) AS updated,
+              SELECT b.id,b.title,u.name,COALESCE((SELECT avatar FROM user_profiles p WHERE p.user=u.id),0) AS avatar,(SELECT image FROM avatar_images ai WHERE ai.user=u.id) AS avatarImage,count(q.id) AS count,max(q.created) AS updated,
                 group_concat(DISTINCT json_extract(q.package,'$.question.subject')) AS subjects,
                 CASE WHEN min(COALESCE(json_extract(q.package,'$.question.contentKind'),'question'))='knowledge'
                   AND max(COALESCE(json_extract(q.package,'$.question.contentKind'),'question'))='knowledge'
@@ -237,15 +251,24 @@ class Handler(BaseHTTPRequestHandler):
             except RuntimeError as error:
                 raise Invalid(str(error), 503)
         if path == '/v1/notebooks' and method == 'GET':
-            return {'items': [dict(row) for row in db.execute('SELECT b.id,b.title,u.name,count(q.id) AS count FROM notebooks b JOIN users u ON u.id=b.owner JOIN questions q ON q.notebook_id=b.id AND q.active=1 GROUP BY b.id ORDER BY b.title LIMIT 200')]}
+            return {'items': [dict(row) for row in db.execute('SELECT b.id,b.title,u.name,COALESCE((SELECT avatar FROM user_profiles p WHERE p.user=u.id),0) AS avatar,(SELECT image FROM avatar_images ai WHERE ai.user=u.id) AS avatarImage,count(q.id) AS count FROM notebooks b JOIN users u ON u.id=b.owner JOIN questions q ON q.notebook_id=b.id AND q.active=1 GROUP BY b.id ORDER BY b.title LIMIT 200')]}
         book_match = re.fullmatch(r'/v1/notebooks/(book-[a-f0-9]{32})', path)
         if book_match and method == 'GET':
-            rows = db.execute('SELECT q.*,u.name FROM questions q JOIN users u ON u.id=q.owner WHERE q.notebook_id=? AND active=1 ORDER BY CAST(question_number AS INTEGER) LIMIT 200', (book_match[1],))
+            rows = db.execute('SELECT q.*,u.name,COALESCE((SELECT avatar FROM user_profiles p WHERE p.user=u.id),0) AS avatar,(SELECT image FROM avatar_images ai WHERE ai.user=u.id) AS avatarImage FROM questions q JOIN users u ON u.id=q.owner WHERE q.notebook_id=? AND active=1 ORDER BY CAST(question_number AS INTEGER) LIMIT 200', (book_match[1],))
             return {'items':[self.question(db,row,uid,summary=True) for row in rows]}
+        if path == '/v1/me' and method == 'PUT':
+            name = text(body,'name',80)
+            avatar = body.get('avatar')
+            if type(avatar) is not int or not 0 <= avatar < 16:
+                raise Invalid('请选择有效的默认头像')
+            if body.get('useDefault') is True: avatar_review.use_default(db,uid)
+            db.execute('UPDATE users SET name=? WHERE id=?',(name,uid))
+            db.execute('INSERT INTO user_profiles(user,avatar) VALUES(?,?) ON CONFLICT(user) DO UPDATE SET avatar=excluded.avatar',(uid,avatar))
+            return dict(id=uid,name=name,avatar=avatar,avatarImage=avatar_review.active(db,uid))
         if path == '/v1/me' and method == 'GET':
-            return {'id': uid, 'name': user['name']}
+            return {'id':uid,'name':user['name'],'avatarImage':avatar_review.active(db,uid),'avatar':db.execute('SELECT COALESCE((SELECT avatar FROM user_profiles WHERE user=?),0)',(uid,)).fetchone()[0]}
         if path == '/v1/questions' and method == 'GET':
-            rows = db.execute('SELECT q.*,u.name FROM questions q JOIN users u ON u.id=q.owner WHERE active=1 ORDER BY created DESC,id DESC LIMIT 200')
+            rows = db.execute('SELECT q.*,u.name,COALESCE((SELECT avatar FROM user_profiles p WHERE p.user=u.id),0) AS avatar,(SELECT image FROM avatar_images ai WHERE ai.user=u.id) AS avatarImage FROM questions q JOIN users u ON u.id=q.owner WHERE active=1 ORDER BY created DESC,id DESC LIMIT 200')
             return {'items': [self.question(db, row, uid, summary=True) for row in rows]}
         if path == '/v1/questions' and method == 'POST':
             rid, value = request_id(body), package(body, user['name'])
@@ -278,6 +301,7 @@ class Handler(BaseHTTPRequestHandler):
             value['id'] = qid
             db.execute('INSERT INTO questions(id,owner,request_id,package,created,notebook_id,question_number) VALUES(?,?,?,?,?,?,?)',
                        (qid, uid, rid, json.dumps(value, ensure_ascii=False), time.time_ns(),book_id,number))
+            if learning_profile.valid(value['question']):db.execute('UPDATE questions SET qualified_at=created WHERE id=?',(qid,))
             return {'id': qid, 'active': True}
         if path == '/v1/feedback' and method == 'GET':
             return {'items': [dict(r) for r in db.execute('SELECT id,request_id,lesson,title,body,status,reply FROM feedback WHERE owner=? ORDER BY created DESC LIMIT 500', (uid,))]}
@@ -296,7 +320,7 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r'/v1/questions/(user-[a-f0-9]{32})(/comments|/like)?', path)
         if match:
             qid, action = match.groups()
-            row = db.execute('SELECT q.*,u.name FROM questions q JOIN users u ON u.id=q.owner WHERE q.id=? AND active=1', (qid,)).fetchone()
+            row = db.execute('SELECT q.*,u.name,COALESCE((SELECT avatar FROM user_profiles p WHERE p.user=u.id),0) AS avatar,(SELECT image FROM avatar_images ai WHERE ai.user=u.id) AS avatarImage FROM questions q JOIN users u ON u.id=q.owner WHERE q.id=? AND active=1', (qid,)).fetchone()
             if row is None:
                 raise Invalid('题目已撤回或不存在', 404)
             if action is None and method == 'GET':
@@ -315,7 +339,7 @@ class Handler(BaseHTTPRequestHandler):
                     db.execute('DELETE FROM likes WHERE question=? AND owner=?', (qid, uid))
                 return self.question(db, row, uid)
             if action == '/comments' and method == 'GET':
-                return {'items': [dict(r) for r in db.execute('SELECT c.id,c.body,u.name,c.owner=? AS mine FROM comments c JOIN users u ON c.owner=u.id WHERE question=? ORDER BY created DESC LIMIT 200', (uid, qid))]}
+                return {'items': [dict(r) for r in db.execute('SELECT c.id,c.body,u.name,COALESCE((SELECT avatar FROM user_profiles p WHERE p.user=u.id),0) AS avatar,(SELECT image FROM avatar_images ai WHERE ai.user=u.id) AS avatarImage,c.owner=? AS mine FROM comments c JOIN users u ON c.owner=u.id WHERE question=? ORDER BY created DESC LIMIT 200', (uid, qid))]}
             if action == '/comments' and method == 'POST':
                 rid, content = request_id(body), text(body, 'body', 2000)
                 old = db.execute('SELECT * FROM comments WHERE owner=? AND request_id=?', (uid, rid)).fetchone()
@@ -339,7 +363,8 @@ class Handler(BaseHTTPRequestHandler):
         value = json.loads(row['package'])
         if summary:
             value = {'author': value['author'], 'question': {k:value['question'].get(k,'') for k in ['title','notebookTitle','questionNumber','contentKind']}}
-        return {'id': row['id'], 'package': value, 'mine': row['owner'] == uid, 'likes': count, 'liked': liked}
+        import improvements
+        return {'id': row['id'], 'ownerId':row['owner'], 'revision':improvements.revision(row['package']), 'package': value, 'mine': row['owner'] == uid, 'likes': count, 'liked': liked,'avatar':row['avatar'],'avatarImage':row['avatarImage']}
 
 
 def serve(path, cert, key, port):

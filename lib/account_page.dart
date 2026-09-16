@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'brand.dart';
 import 'community.dart';
 import 'store.dart';
+import 'avatar_page.dart';
 
 class AccountPage extends StatefulWidget {
   final StudyStore store;
@@ -18,6 +19,8 @@ class _AccountPageState extends State<AccountPage> {
       name = TextEditingController();
   bool register = false, busy = false, visible = false;
   String error = '';
+  int avatar = 0;
+  bool customAvatar = false;
   @override
   void initState() {
     super.initState();
@@ -47,10 +50,23 @@ class _AccountPageState extends State<AccountPage> {
             'username': username.text.trim(),
             'password': password.text,
             if (register) 'name': name.text.trim(),
+            if (register) 'avatar': avatar,
           });
       config['token'] = result['token'];
       await widget.store.setting('community', jsonEncode(config));
+      await widget.store.setting('avatar', '${result['avatar'] ?? 0}');
+      await widget.store.setting('profileName', result['name'] as String);
+      await widget.store.setting(
+        'avatarImage',
+        result['avatarImage'] as String? ?? '',
+      );
       password.clear();
+      if (mounted && customAvatar && register) {
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute(builder: (_) => AvatarPage(store: widget.store)),
+        );
+      }
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
@@ -99,6 +115,39 @@ class _AccountPageState extends State<AccountPage> {
                 : (s) => setState(() => register = s.first),
           ),
           const SizedBox(height: 20),
+          if (register)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: BlueAvatar(index: avatar, width: 52),
+                title: const Text('选择头像'),
+                subtitle: Text(
+                  customAvatar ? '自定义头像 · 注册后上传审核' : avatarNames[avatar],
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: busy
+                    ? null
+                    : () async {
+                        final chosen = await chooseBlueAvatar(context, avatar);
+                        if (chosen != null && mounted) {
+                          setState(() {
+                            customAvatar = chosen == -1;
+                            if (!customAvatar) avatar = chosen;
+                          });
+                        }
+                      },
+              ),
+            ),
+          if (register)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text(
+                '注册后也可在“我的”上传照片头像，审核通过后使用。',
+                style: TextStyle(fontSize: 12, color: Colors.blueGrey),
+              ),
+            ),
           AutofillGroup(
             child: Column(
               children: [
@@ -108,6 +157,7 @@ class _AccountPageState extends State<AccountPage> {
                   autofillHints: const [AutofillHints.username],
                   maxLength: 40,
                   decoration: const InputDecoration(
+                    counterText: '',
                     labelText: '账号',
                     hintText: '字母、数字或下划线',
                     prefixIcon: Icon(Icons.person_outline),
@@ -119,6 +169,7 @@ class _AccountPageState extends State<AccountPage> {
                     enabled: !busy,
                     maxLength: 80,
                     decoration: const InputDecoration(
+                      counterText: '',
                       labelText: '昵称',
                       prefixIcon: Icon(Icons.badge_outlined),
                     ),
@@ -131,6 +182,7 @@ class _AccountPageState extends State<AccountPage> {
                   enableSuggestions: false,
                   maxLength: 128,
                   decoration: InputDecoration(
+                    counterText: '',
                     labelText: '密码',
                     hintText: '至少8个字符',
                     prefixIcon: const Icon(Icons.lock_outline),

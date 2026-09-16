@@ -4,6 +4,10 @@ import 'community.dart';
 import 'collaboration_pages.dart';
 import 'domain.dart';
 import 'store.dart';
+import 'improvements_page.dart';
+import 'learning_profile_page.dart';
+import 'notebooks.dart';
+import 'question_editor.dart';
 
 class PublicNotebookPage extends StatefulWidget {
   final StudyStore store;
@@ -25,6 +29,36 @@ class _PublicNotebookPageState extends State<PublicNotebookPage> {
   String error = '';
   bool busy = false;
   int tab = 0;
+  final forkLocalId = 'book-${newId()}';
+  Future<void> forkNotebook() => run(() async {
+    final snapshot = await widget.client.request('POST', '$path/fork', {
+      'localId': forkLocalId,
+    });
+    await widget.store.createFork(forkLocalId, snapshot);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已保存为私有学习本，保留原作来源。加入自己的理解后才计入派生成就。')),
+    );
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NotebooksPage(
+          store: widget.store,
+          initialBook: forkLocalId,
+          knowledge: isKnowledgeBook(widget.store, forkLocalId),
+          openLesson: (lesson) async {
+            await Navigator.push<void>(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    QuestionEditor(store: widget.store, id: lesson.id),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  });
   String get path => '/v1/notebooks/${widget.book['id']}';
   @override
   void initState() {
@@ -151,9 +185,32 @@ class _PublicNotebookPageState extends State<PublicNotebookPage> {
           const SizedBox(height: 10),
           Row(
             children: [
-              const BlueAvatar(width: 35),
+              BlueAvatar(
+                photo: w?['avatarImage'] as String?,
+                index:
+                    w?['avatar'] as int? ?? widget.book['avatar'] as int? ?? 0,
+                width: 35,
+              ),
               const SizedBox(width: 10),
-              Text((w?['name'] ?? widget.book['name']) as String),
+              Flexible(
+                child: TextButton(
+                  onPressed: w?['ownerId'] == null
+                      ? null
+                      : () => Navigator.push<void>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => LearningProfilePage(
+                              client: widget.client,
+                              userId: w!['ownerId'] as String,
+                            ),
+                          ),
+                        ),
+                  child: Text(
+                    (w?['name'] ?? widget.book['name']) as String,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
               const Spacer(),
               Text(
                 '${entries.length} 条内容',
@@ -230,6 +287,12 @@ class _PublicNotebookPageState extends State<PublicNotebookPage> {
           if (error.isNotEmpty)
             Text(error, style: const TextStyle(color: Colors.red)),
           if (w != null) ...[
+            if (w['owner'] != true)
+              OutlinedButton.icon(
+                onPressed: busy ? null : forkNotebook,
+                icon: const Icon(Icons.fork_right),
+                label: const Text('基于此创建我的版本'),
+              ),
             if (w['member'] == true)
               Wrap(
                 spacing: 10,
@@ -266,6 +329,24 @@ class _PublicNotebookPageState extends State<PublicNotebookPage> {
                 ),
               ),
             const SizedBox(height: 20),
+            OutlinedButton.icon(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      await Navigator.push<void>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ImprovementsPage(
+                            client: widget.client,
+                            bookId: widget.book['id'] as String,
+                          ),
+                        ),
+                      );
+                      if (mounted) run(load);
+                    },
+              icon: const Icon(Icons.edit_note),
+              label: const Text('提交改进 / 贡献记录'),
+            ),
             SegmentedButton<int>(
               showSelectedIcon: false,
               segments: const [
@@ -321,7 +402,11 @@ class _PublicNotebookPageState extends State<PublicNotebookPage> {
             if (tab == 1)
               ...(w['members'] as List).map(
                 (m) => ListTile(
-                  leading: const BlueAvatar(width: 34),
+                  leading: BlueAvatar(
+                    photo: m['avatarImage'] as String?,
+                    index: m['avatar'] as int? ?? 0,
+                    width: 34,
+                  ),
                   title: Text(m['name'] as String),
                   subtitle: const Text('共同维护者'),
                 ),

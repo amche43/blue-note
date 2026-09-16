@@ -5,6 +5,12 @@ import time
 
 
 def initialize(db):
+    import notebook_forks
+    notebook_forks.initialize(db)
+    import learning_profile
+    learning_profile.initialize(db)
+    import improvements
+    improvements.initialize(db)
     db.executescript('''
     CREATE TABLE IF NOT EXISTS book_profiles(book TEXT PRIMARY KEY REFERENCES notebooks(id), description TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS book_members(book TEXT REFERENCES notebooks(id), user TEXT REFERENCES users(id), PRIMARY KEY(book,user));
@@ -16,24 +22,28 @@ def initialize(db):
 
 def route(db, uid, method, path, body, Invalid, text, request_id):
     if path == '/v1/inbox' and method == 'GET':
-        applications = [dict(r) for r in db.execute('''SELECT a.*,u.name,b.title,b.owner=? AS canReview FROM book_applications a JOIN users u ON a.user=u.id JOIN notebooks b ON b.id=a.book WHERE a.user=? OR b.owner=? ORDER BY a.created DESC LIMIT 200''',(uid,uid,uid))]
+        applications = [dict(r) for r in db.execute('''SELECT a.*,u.name,COALESCE((SELECT avatar FROM user_profiles p WHERE p.user=u.id),0) AS avatar,(SELECT image FROM avatar_images ai WHERE ai.user=u.id) AS avatarImage,b.title,b.owner=? AS canReview FROM book_applications a JOIN users u ON a.user=u.id JOIN notebooks b ON b.id=a.book WHERE a.user=? OR b.owner=? ORDER BY a.created DESC LIMIT 200''',(uid,uid,uid))]
         rooms = [dict(r) for r in db.execute('''SELECT b.id,b.title,(SELECT max(created) FROM book_messages m WHERE m.book=b.id) AS updated FROM notebooks b WHERE b.owner=? OR EXISTS(SELECT 1 FROM book_members m WHERE m.book=b.id AND m.user=?) ORDER BY updated DESC,b.title LIMIT 200''',(uid,uid))]
-        return dict(applications=applications, rooms=rooms)
+        improvements = [dict(r) for r in db.execute('''SELECT i.id,i.book,i.status,i.created,i.reviewed,i.reason,i.review_note,u.name,b.title,
+          json_extract(q.package,'$.question.title') AS entryTitle,q.owner=? AS canReview
+          FROM improvements i JOIN questions q ON q.id=i.question JOIN notebooks b ON b.id=i.book JOIN users u ON u.id=i.author
+          WHERE q.owner=? OR i.author=? ORDER BY COALESCE(i.reviewed,i.created) DESC LIMIT 100''',(uid,uid,uid))]
+        return dict(applications=applications, rooms=rooms, improvements=improvements)
     match = re.fullmatch(r'/v1/notebooks/(book-[a-f0-9]{32})/(workspace|apply|applications|messages|description)',path)
     if not match:
         return None
     bid, action = match.groups()
-    book = db.execute('SELECT b.*,u.name FROM notebooks b JOIN users u ON u.id=b.owner WHERE b.id=?',(bid,)).fetchone()
+    book = db.execute('SELECT b.*,u.name,COALESCE((SELECT avatar FROM user_profiles p WHERE p.user=u.id),0) AS avatar,(SELECT image FROM avatar_images ai WHERE ai.user=u.id) AS avatarImage FROM notebooks b JOIN users u ON u.id=b.owner WHERE b.id=?',(bid,)).fetchone()
     if not book:
         raise Invalid('学习本不存在',404)
     owner = book['owner'] == uid
     member = owner or db.execute('SELECT 1 FROM book_members WHERE book=? AND user=?',(bid,uid)).fetchone() is not None
     if action == 'workspace' and method == 'GET':
         profile = db.execute('SELECT description,version FROM book_profiles WHERE book=?',(bid,)).fetchone()
-        members = [dict(r) for r in db.execute('SELECT u.id,u.name FROM users u WHERE u.id=? OR u.id IN(SELECT user FROM book_members WHERE book=?)',(book['owner'],bid))]
+        members = [dict(r) for r in db.execute('SELECT u.id,u.name,COALESCE((SELECT avatar FROM user_profiles p WHERE p.user=u.id),0) AS avatar,(SELECT image FROM avatar_images ai WHERE ai.user=u.id) AS avatarImage FROM users u WHERE u.id=? OR u.id IN(SELECT user FROM book_members WHERE book=?)',(book['owner'],bid))]
         application = db.execute('SELECT status FROM book_applications WHERE book=? AND user=?',(bid,uid)).fetchone()
-        history = [dict(r) for r in db.execute('SELECT h.version,h.description,h.created,u.name FROM book_history h JOIN users u ON u.id=h.user WHERE h.book=? ORDER BY version DESC LIMIT 100',(bid,))]
-        return dict(id=bid,title=book['title'],name=book['name'],owner=owner,member=member,members=members,application=application['status'] if application else '',description=profile['description'] if profile else '',version=profile['version'] if profile else 0,history=history)
+        history = [dict(r) for r in db.execute('SELECT h.version,h.description,h.created,u.name,COALESCE((SELECT avatar FROM user_profiles p WHERE p.user=u.id),0) AS avatar,(SELECT image FROM avatar_images ai WHERE ai.user=u.id) AS avatarImage FROM book_history h JOIN users u ON u.id=h.user WHERE h.book=? ORDER BY version DESC LIMIT 100',(bid,))]
+        return dict(id=bid,title=book['title'],ownerId=book['owner'],name=book['name'],avatar=book['avatar'],avatarImage=book['avatarImage'],owner=owner,member=member,members=members,application=application['status'] if application else '',description=profile['description'] if profile else '',version=profile['version'] if profile else 0,history=history)
     if action == 'apply' and method == 'POST':
         if member:
             return dict(status='accepted')
@@ -75,7 +85,7 @@ def route(db, uid, method, path, body, Invalid, text, request_id):
         db.execute('INSERT INTO book_history VALUES(?,?,?,?,?)',(bid,version+1,uid,description,time.time_ns()))
         return dict(version=version+1)
     if action == 'messages' and method == 'GET':
-        rows = [dict(r) for r in db.execute('SELECT m.id,m.body,m.created,u.name,m.user=? AS mine FROM book_messages m JOIN users u ON u.id=m.user WHERE book=? ORDER BY m.created DESC,m.id DESC LIMIT 200',(uid,bid))]
+        rows = [dict(r) for r in db.execute('SELECT m.id,m.body,m.created,u.name,COALESCE((SELECT avatar FROM user_profiles p WHERE p.user=u.id),0) AS avatar,(SELECT image FROM avatar_images ai WHERE ai.user=u.id) AS avatarImage,m.user=? AS mine FROM book_messages m JOIN users u ON u.id=m.user WHERE book=? ORDER BY m.created DESC,m.id DESC LIMIT 200',(uid,bid))]
         return dict(items=list(reversed(rows)))
     if action == 'messages' and method == 'POST':
         rid, content = request_id(body), text(body,'body',2000)

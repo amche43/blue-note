@@ -11,6 +11,7 @@ _attempts = {}
 
 
 def initialize(db):
+    db.execute('CREATE TABLE IF NOT EXISTS user_profiles(user TEXT PRIMARY KEY REFERENCES users(id), avatar INTEGER NOT NULL DEFAULT 0 CHECK(avatar>=0 AND avatar<16))')
     db.execute('CREATE TABLE IF NOT EXISTS credentials(username TEXT PRIMARY KEY, user TEXT UNIQUE REFERENCES users(id), salt TEXT NOT NULL, digest TEXT NOT NULL)')
 
 
@@ -34,12 +35,16 @@ def authenticate(db, path, body, Invalid, text):
     credential = db.execute('SELECT * FROM credentials WHERE username=?',(username,)).fetchone()
     if path == '/v1/auth/register':
         name = text(body,'name',80)
+        avatar = body.get('avatar',0)
+        if type(avatar) is not int or not 0 <= avatar < 16:
+            raise Invalid('请选择有效的默认头像')
         if credential:
             raise Invalid('这个账号已被注册',409)
         salt = secrets.token_hex(16)
         digest = hashlib.pbkdf2_hmac('sha256',password.encode(),bytes.fromhex(salt),600000).hex()
         uid, token = secrets.token_hex(16), secrets.token_hex(32)
         db.execute('INSERT INTO users VALUES(?,?,?)',(uid,name,hashlib.sha256(token.encode()).hexdigest()))
+        db.execute('INSERT INTO user_profiles VALUES(?,?)',(uid,avatar))
         db.execute('INSERT INTO credentials VALUES(?,?,?,?)',(username,uid,salt,digest))
     else:
         salt = credential['salt'] if credential else '0'*32
@@ -50,4 +55,6 @@ def authenticate(db, path, body, Invalid, text):
         # A new login replaces the previous session on this local test account.
         db.execute('UPDATE users SET token=? WHERE id=?',(hashlib.sha256(token.encode()).hexdigest(),uid))
         name = db.execute('SELECT name FROM users WHERE id=?',(uid,)).fetchone()['name']
-    return dict(id=uid,name=name,token=token)
+    profile=db.execute('SELECT avatar FROM user_profiles WHERE user=?',(uid,)).fetchone()
+    import avatar_review
+    return dict(id=uid,name=name,token=token,avatar=profile['avatar'] if profile else 0,avatarImage=avatar_review.active(db,uid))

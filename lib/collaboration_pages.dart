@@ -4,6 +4,7 @@ import 'brand.dart';
 import 'community.dart';
 import 'domain.dart';
 import 'store.dart';
+import 'improvements_page.dart';
 
 const applicationLabels = {
   'pending': '待处理',
@@ -24,7 +25,7 @@ class CollaborationInbox extends StatefulWidget {
 }
 
 class _CollaborationInboxState extends State<CollaborationInbox> {
-  List<Json> applications = [], rooms = [];
+  List<Json> applications = [], rooms = [], improvements = [];
   String error = '';
   bool busy = false;
   int tab = 0;
@@ -46,6 +47,7 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
         setState(() {
           applications = (result['applications'] as List).cast<Json>();
           rooms = (result['rooms'] as List).cast<Json>();
+          improvements = (result['improvements'] as List? ?? []).cast<Json>();
         });
       }
     } catch (e) {
@@ -112,6 +114,7 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
           segments: const [
             ButtonSegment(value: 0, label: Text('协作申请')),
             ButtonSegment(value: 1, label: Text('聊天')),
+            ButtonSegment(value: 2, label: Text('改进')),
           ],
           selected: {tab},
           onSelectionChanged: (s) => setState(() => tab = s.first),
@@ -120,6 +123,56 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
         if (busy) const LinearProgressIndicator(),
         if (error.isNotEmpty)
           Text(error, style: const TextStyle(color: Colors.red)),
+        if (tab == 2) ...[
+          if (!busy && improvements.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(28),
+              child: Column(
+                children: [
+                  BlueMascot(width: 90),
+                  SizedBox(height: 16),
+                  Text('还没有改进消息'),
+                  Text(
+                    '收到的提案与自己提交的处理结果会出现在这里。',
+                    style: TextStyle(fontSize: 12, color: Colors.blueGrey),
+                  ),
+                ],
+              ),
+            ),
+          ...improvements.map(
+            (item) => ListTile(
+              leading: Icon(
+                item['status'] == 'pending'
+                    ? Icons.rate_review_outlined
+                    : Icons.task_alt,
+                color: const Color(0xff2878f0),
+              ),
+              title: Text(
+                item['entryTitle'] as String,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                '${item['title']}\n${item['canReview'] == 1 ? '收到 ${item['name']} 的改进' : '我提交的改进'} · ${{'pending': '待核对', 'accepted': '已合并', 'rejected': '未采纳'}[item['status']]}',
+              ),
+              isThreeLine: true,
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async {
+                await Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ImprovementsPage(
+                      client: widget.client,
+                      bookId: item['book'] as String,
+                      initialProposalId: item['id'] as String,
+                    ),
+                  ),
+                );
+                if (mounted) await load();
+              },
+            ),
+          ),
+        ],
         if (tab == 0) ...[
           if (!busy && applications.isEmpty)
             const Padding(
@@ -149,7 +202,11 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
                 children: [
                   Row(
                     children: [
-                      const BlueAvatar(width: 34),
+                      BlueAvatar(
+                        photo: a['avatarImage'] as String?,
+                        index: a['avatar'] as int? ?? 0,
+                        width: 34,
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -196,7 +253,7 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
               ),
             ),
           ),
-        ] else ...[
+        ] else if (tab == 1) ...[
           if (!busy && rooms.isEmpty)
             const Padding(
               padding: EdgeInsets.all(30),
@@ -257,7 +314,7 @@ class _BookChatPageState extends State<BookChatPage> {
   final scroll = ScrollController();
   List<Json> messages = [];
   String error = '', rid = newId();
-  String? pending;
+  String? pending, draftSticker;
   bool sending = false, loading = false;
   Timer? timer;
   String get path => '/v1/notebooks/${widget.book}/messages';
@@ -312,9 +369,12 @@ class _BookChatPageState extends State<BookChatPage> {
   }
 
   Future<void> send() async {
-    if (sending || input.text.trim().isEmpty) return;
+    if (sending || (input.text.trim().isEmpty && draftSticker == null)) return;
     // Keep the same payload and id when delivery is uncertain.
-    pending ??= input.text.trim();
+    pending ??= [
+      if (input.text.trim().isNotEmpty) input.text.trim(),
+      ?draftSticker,
+    ].join('\n');
     setState(() => sending = true);
     try {
       await widget.client.request('POST', path, {
@@ -324,6 +384,7 @@ class _BookChatPageState extends State<BookChatPage> {
       if (mounted) {
         input.clear();
         pending = null;
+        draftSticker = null;
         rid = newId();
         await load();
       }
@@ -393,15 +454,27 @@ class _BookChatPageState extends State<BookChatPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            '${m['name']} · ${DateTime.fromMicrosecondsSinceEpoch((m['created'] as int) ~/ 1000).toLocal().toString().substring(5, 16)}',
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: Colors.blueGrey,
-                            ),
+                          Row(
+                            children: [
+                              BlueAvatar(
+                                photo: m['avatarImage'] as String?,
+                                index: m['avatar'] as int? ?? 0,
+                                width: 24,
+                              ),
+                              const SizedBox(width: 7),
+                              Expanded(
+                                child: Text(
+                                  '${m['name']} · ${DateTime.fromMicrosecondsSinceEpoch((m['created'] as int) ~/ 1000).toLocal().toString().substring(5, 16)}',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.blueGrey,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 5),
-                          SelectableText(m['body'] as String),
+                          BlueMessageBody(m['body'] as String),
                         ],
                       ),
                     ),
@@ -410,11 +483,58 @@ class _BookChatPageState extends State<BookChatPage> {
               ],
             ),
           ),
+          if (draftSticker != null)
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  BlueSticker(
+                    stickerNames.indexWhere((n) => draftSticker == '[蓝笔表情:$n]'),
+                    width: 52,
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      '表情已选好',
+                      style: TextStyle(fontSize: 12, color: Colors.blueGrey),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '移除表情',
+                    onPressed: sending || pending != null
+                        ? null
+                        : () => setState(() => draftSticker = null),
+                    icon: const Icon(Icons.close, size: 18),
+                  ),
+                ],
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.all(12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                IconButton(
+                  tooltip: '蓝笔表情',
+                  onPressed: sending || pending != null
+                      ? null
+                      : () async {
+                          FocusScope.of(context).unfocus();
+                          final sticker = await chooseBlueSticker(context);
+                          if (sticker != null && mounted) {
+                            setState(() => draftSticker = sticker);
+                          }
+                        },
+                  icon: const Icon(
+                    Icons.emoji_emotions_outlined,
+                    color: Color(0xff2878f0),
+                  ),
+                ),
                 Expanded(
                   child: TextField(
                     controller: input,

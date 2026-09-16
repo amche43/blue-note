@@ -127,7 +127,13 @@ void main() {
       ),
     );
     await tester.runAsync(() async {
-      for (final asset in ['ui-reference', 'avatars', 'subjects', 'mascots']) {
+      for (final asset in [
+        'ui-reference',
+        'avatars',
+        'subjects',
+        'mascots',
+        'mascot-transparent',
+      ]) {
         await precacheImage(
           AssetImage('assets/brand/$asset.png'),
           key.currentContext!,
@@ -140,15 +146,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.settings['welcomeSeen'], 'true');
     await shot('home-demo');
-    await store.setting('notebook:${'book-${'e' * 32}'}','{"title":"空白学习本","kind":"question"}');
+    await store.setting(
+      'notebook:${'book-${'e' * 32}'}',
+      '{"title":"空白学习本","kind":"question"}',
+    );
     await tester.tap(find.text('搜索学习本、知识点、题目…'));
     await tester.pumpAndSettle();
-    final search=find.byKey(const ValueKey('search-5'));
+    final search = find.byKey(const ValueKey('search-5'));
     await tester.ensureVisible(search);
-    await tester.enterText(search,'空白学习本');
+    await tester.enterText(search, '空白学习本');
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(ListTile,'空白学习本'),findsOneWidget);
-    await tester.pumpWidget(RepaintBoundary(key:key,child:BlueNoteApp(key:UniqueKey(),store:store)));
+    expect(find.widgetWithText(ListTile, '空白学习本'), findsOneWidget);
+    await tester.pumpWidget(
+      RepaintBoundary(
+        key: key,
+        child: BlueNoteApp(key: UniqueKey(), store: store),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('我的').last);
     await tester.pumpAndSettle();
@@ -164,6 +178,10 @@ void main() {
     await shot('notifications');
     await tester.tap(find.byTooltip('添加'));
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('create-page')), findsOneWidget);
+    expect(find.text('创造我的学习成果'), findsOneWidget);
+    expect(find.text('头像与照片审核'), findsNothing);
+    await shot('create-hub');
     await tester.tap(find.text('创建学习本'));
     await tester.pumpAndSettle();
     await shot('create');
@@ -177,11 +195,7 @@ void main() {
         key: key,
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(
-            useMaterial3: true,
-            colorScheme: ColorScheme.fromSeed(seedColor: inkBlue),
-            scaffoldBackgroundColor: paper,
-          ),
+          theme: blueNoteTheme(),
           home: HallPage(client: PreviewCommunity(), store: store),
         ),
       ),

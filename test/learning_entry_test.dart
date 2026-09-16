@@ -46,8 +46,8 @@ void main(){
     await tester.tap(find.text('开始录入'));await tester.pumpAndSettle();
     final body=find.byWidgetPredicate((w)=>w is TextField&&w.decoration?.labelText=='题目正文');
     await tester.ensureVisible(body);await tester.enterText(body,'这是一道等待理解的题目');await tester.pumpAndSettle();
-    await tester.pageBack();await tester.pumpAndSettle();expect(find.text('放弃尚未保存的记录？'),findsOneWidget);
-    await tester.tap(find.text('继续整理'));await tester.pumpAndSettle();
+    await tester.pageBack();await tester.pumpAndSettle();expect(find.text('先把这份内容留下来？'),findsOneWidget);
+    await tester.tap(find.text('继续编辑'));await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('下一步'));await tester.tap(find.text('下一步'));await tester.pumpAndSettle();
     final breakthrough=find.byWidgetPredicate((w)=>w is TextField&&w.decoration?.labelText=='关键突破点：看到什么，就该想到什么');
     await tester.enterText(breakthrough,'先检查适用条件');

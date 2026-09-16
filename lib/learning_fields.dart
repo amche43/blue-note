@@ -1,0 +1,16 @@
+const comparisonFields = {
+  'title': '标题',
+  'subject': '学科',
+  'chapter': '章节',
+  'contentKind': '内容类型',
+  'prompt': '题目正文',
+  'formula': '公式（LaTeX）',
+  'answer': '正确解法',
+  'trigger': '关键突破点',
+  'action': '解题思路',
+  'conditions': '适用条件',
+  'pitfall': '易错点',
+  'firstThought': '我的理解',
+  'errorReason': '错误原因',
+  'summary': '总结',
+};
