@@ -363,6 +363,31 @@ class StudyStore extends ChangeNotifier {
     );
   }
 
+  Future<void> deleteNotebook(String book) async {
+    final entries = questions.entries
+        .where(
+          (e) => e.value['notebookId'] == book && e.value['deleted'] == false,
+        )
+        .toList();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await merge(
+      entries.map((e) {
+        final latest = events
+            .where((v) => v.lessonId == e.key)
+            .fold<int>(0, (a, v) => a > v.at ? a : v.at);
+        return StudyEvent(
+          id: newId(),
+          lessonId: e.key,
+          type: 'question',
+          at: now > latest ? now : latest + 1,
+          payload: {...e.value, 'deleted': true},
+        );
+      }),
+      removeSettings: ['notebook:$book'],
+      expectedQuestions: {for (final e in entries) e.key: e.value},
+    );
+  }
+
   Future<String> importQuestionPackage(String raw) async {
     final package = decodeQuestionPackage(raw);
     final incoming = package['question'] as Json;

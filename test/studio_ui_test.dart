@@ -127,6 +127,9 @@ void main() {
       ),
     );
     await tester.runAsync(() async {
+      for (final scene in ['explore', 'messages', 'capture']) {
+        await precacheImage(ResizeImage(AssetImage('assets/brand/mascot-$scene.png'), width: 180), key.currentContext!);
+      }
       for (final asset in [
         'ui-reference',
         'avatars',

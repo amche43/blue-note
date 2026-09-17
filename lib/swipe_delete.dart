@@ -1,0 +1,66 @@
+import 'package:flutter/material.dart';
+
+/// Swiping reveals an action; it never deletes the row by itself.
+class SwipeDelete extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onDelete;
+  const SwipeDelete({super.key, required this.child, required this.onDelete});
+  @override
+  State<SwipeDelete> createState() => _SwipeDeleteState();
+}
+
+class _SwipeDeleteState extends State<SwipeDelete> {
+  double reveal = 0;
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+    borderRadius: BorderRadius.circular(12),
+    child: Stack(
+      children: [
+        Positioned.fill(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: SizedBox(
+              width: 80,
+              height: double.infinity,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xffd83a49),
+                  shape: const RoundedRectangleBorder(),
+                  padding: EdgeInsets.zero,
+                ),
+                onPressed: reveal == 0
+                    ? null
+                    : () {
+                        setState(() => reveal = 0);
+                        widget.onDelete?.call();
+                      },
+                child: const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [Icon(Icons.delete_outline), Text('删除')],
+                ),
+              ),
+            ),
+          ),
+        ),
+        GestureDetector(
+          onHorizontalDragUpdate: widget.onDelete == null
+              ? null
+              : (d) =>
+                    setState(() => reveal = (reveal - d.delta.dx).clamp(0, 80)),
+          onHorizontalDragEnd: (_) =>
+              setState(() => reveal = reveal > 25 ? 80 : 0),
+          onLongPress: widget.onDelete == null
+              ? null
+              : () => setState(() => reveal = 80),
+          child: Transform.translate(
+            offset: Offset(-reveal, 0),
+            child: Material(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              child: widget.child,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}

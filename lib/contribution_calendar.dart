@@ -65,79 +65,12 @@ class _ContributionCalendarState extends State<ContributionCalendar> {
     super.dispose();
   }
 
+  DateTime? selected;
   void details(DateTime day, List<StudyEvent> entries) {
-    final sorted = [...entries]..sort(compareEvents);
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.sizeOf(ctx).height * .65,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-            children: [
-              Text(dayKey(day), style: Theme.of(ctx).textTheme.titleLarge),
-              Text('${entries.length} 次学习贡献'),
-              Text(
-                '整理 ${entries.where((e) => e.type == 'question').length} · 笔记 ${entries.where((e) => e.type == 'note').length} · 复习 ${entries.where((e) => e.type == 'attempt').length}',
-              ),
-              if (entries.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 32),
-                  child: Text('这一天还没有保存的学习记录。'),
-                ),
-              ...sorted.reversed.map((e) {
-                final title =
-                    widget.store.lessons
-                        .where((l) => l.id == e.lessonId)
-                        .firstOrNull
-                        ?.title ??
-                    e.payload['title'] as String? ??
-                    '已移除的学习内容';
-                final type = e.type == 'question'
-                    ? (e.payload['deleted'] == true ? '移除条目' : '整理条目')
-                    : e.type == 'note'
-                    ? '记录笔记'
-                    : '完成复习';
-                final at = DateTime.fromMillisecondsSinceEpoch(e.at);
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    e.type == 'attempt'
-                        ? Icons.check_circle_outline
-                        : Icons.edit_note,
-                  ),
-                  title: Text(title),
-                  subtitle: Text(
-                    '$type · ${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}',
-                  ),
-                  onTap: () => showDialog<void>(
-                    context: ctx,
-                    builder: (dialog) => AlertDialog(
-                      title: Text(type),
-                      content: SingleChildScrollView(
-                        child: SelectableText(
-                          e.type == 'question'
-                              ? '${e.payload['title']}\n${e.payload['prompt']}'
-                              : e.type == 'note'
-                              ? e.payload['text'] as String
-                              : '${e.payload['correct'] == true ? '答对' : '需要再练'} · ${e.payload['assisted'] == true ? '使用过提示' : '独立尝试'}\n${e.payload['reason']}',
-                        ),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialog),
-                          child: const Text('关闭'),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-            ],
-          ),
-        ),
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ContributionRecordsPage(store: widget.store, day: day),
       ),
     );
   }
@@ -261,7 +194,8 @@ class _ContributionCalendarState extends State<ContributionCalendar> {
                                         '${dayKey(date)}，${entries.length}次贡献',
                                     child: InkWell(
                                       key: ValueKey('day-${dayKey(date)}'),
-                                      onTap: () => details(date, entries),
+                                      onTap: () =>
+                                          setState(() => selected = date),
                                       child: Container(
                                         margin: const EdgeInsets.all(2),
                                         decoration: BoxDecoration(
@@ -272,7 +206,7 @@ class _ContributionCalendarState extends State<ContributionCalendar> {
                                           borderRadius: BorderRadius.circular(
                                             2,
                                           ),
-                                          border: date == today
+                                          border: date == (selected ?? today)
                                               ? Border.all(
                                                   color: const Color(
                                                     0xff185bcc,
@@ -294,18 +228,122 @@ class _ContributionCalendarState extends State<ContributionCalendar> {
             ),
           ],
         ),
+        if (selected != null)
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${dayKey(selected!)} · ${days[dayKey(selected!)]?.length ?? 0} 次贡献',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xff2878f0),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () =>
+                    details(selected!, days[dayKey(selected!)] ?? []),
+                child: const Text('查看详情'),
+              ),
+            ],
+          ),
         const SizedBox(height: 8),
         Row(
           children: [
             const Expanded(
               child: Text(
-                '左右滑动 · 点击查看当天记录',
+                '左右滑动 · 点选日期',
                 style: TextStyle(fontSize: 10, color: Colors.blueGrey),
               ),
             ),
           ],
         ),
       ],
+    );
+  }
+}
+
+class ContributionRecordsPage extends StatelessWidget {
+  final StudyStore store;
+  final DateTime? day;
+  final bool onlyReviews;
+  const ContributionRecordsPage({
+    super.key,
+    required this.store,
+    this.day,
+    this.onlyReviews = false,
+  });
+  @override
+  Widget build(BuildContext context) {
+    final records =
+        store.events
+            .where(
+              (e) =>
+                  ['question', 'note', 'attempt'].contains(e.type) &&
+                  (!onlyReviews || e.type == 'attempt') &&
+                  (day == null ||
+                      dayKey(DateTime.fromMillisecondsSinceEpoch(e.at)) ==
+                          dayKey(day!)),
+            )
+            .toList()
+          ..sort(compareEvents);
+    return Scaffold(
+      appBar: AppBar(title: Text(onlyReviews ? '复习记录' : '${dayKey(day!)} 的贡献')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Text(
+            '共 ${records.length} 条记录',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          if (records.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 32),
+              child: Text('还没有记录。每一次整理和复习，都会留在这里。'),
+            ),
+          ...records.reversed.map((e) {
+            final at = DateTime.fromMillisecondsSinceEpoch(e.at);
+            final title =
+                store.lessons
+                    .where((l) => l.id == e.lessonId)
+                    .firstOrNull
+                    ?.title ??
+                e.payload['title'] as String? ??
+                '已移除的学习内容';
+            final type = e.type == 'question'
+                ? (e.payload['deleted'] == true ? '移除条目' : '整理条目')
+                : e.type == 'note'
+                ? '记录笔记'
+                : '完成复习';
+            final text = e.type == 'question'
+                ? '${e.payload['prompt'] ?? ''}'
+                : e.type == 'note'
+                ? '${e.payload['text'] ?? ''}'
+                : '${e.payload['correct'] == true ? '答对' : '需要再练'} · ${e.payload['assisted'] == true ? '使用过提示' : '独立尝试'}\n${e.payload['reason'] ?? ''}';
+            return ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              leading: Icon(
+                e.type == 'attempt'
+                    ? Icons.check_circle_outline
+                    : Icons.edit_note,
+              ),
+              title: Text(title),
+              subtitle: Text(
+                '$type · ${dayKey(at)} ${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}',
+              ),
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: SelectableText(text),
+                  ),
+                ),
+              ],
+            );
+          }),
+        ],
+      ),
     );
   }
 }

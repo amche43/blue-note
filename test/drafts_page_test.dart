@@ -48,7 +48,9 @@ void main() {
       await s.setting(
         'editDraft:$id',
         jsonEncode({
-            'at': DateTime.now().subtract(const Duration(hours:2)).millisecondsSinceEpoch,
+          'at': DateTime.now()
+              .subtract(const Duration(hours: 2))
+              .millisecondsSinceEpoch,
           'data': {
             'base': s.questions[id],
             'fields': {
@@ -62,7 +64,9 @@ void main() {
       await s.setting(
         'editDraft:composer-knowledge',
         jsonEncode({
-            'at': DateTime.now().subtract(const Duration(hours:1)).millisecondsSinceEpoch,
+          'at': DateTime.now()
+              .subtract(const Duration(hours: 1))
+              .millisecondsSinceEpoch,
           'data': {
             'fields': {'title': '熟知端口号', 'prompt': 'HTTP 与 HTTPS'},
             'kind': 'knowledge',
@@ -131,12 +135,16 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '已保存');
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('删除草稿'));
+      await tester.drag(find.text('已保存的题目'), const Offset(-120, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('删除'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('保留'));
       await tester.pumpAndSettle();
       expect(s.settings.containsKey('editDraft:$id'), isTrue);
-      await tester.tap(find.byTooltip('删除草稿'));
+      await tester.drag(find.text('已保存的题目'), const Offset(-120, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('删除'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, '删除草稿'));
       await tester.pumpAndSettle();

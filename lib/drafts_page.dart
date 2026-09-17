@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'swipe_delete.dart';
 import 'domain.dart';
 import 'store.dart';
 import 'entry_composer.dart';
@@ -248,27 +249,27 @@ class _DraftsPageState extends State<DraftsPage> {
           for (final d in list)
             Column(
               children: [
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    d.knowledge ? Icons.lightbulb_outline : Icons.edit_note,
-                    color: const Color(0xff2878f0),
-                  ),
-                  title: Text(
-                    d.data == null ? '无法读取的草稿' : d.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(
-                    '${bookName(d)}\n${d.savedAt}${d.data?['capture'] != null ? ' · 含识别记录' : ''}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  isThreeLine: true,
-                  onTap: busy ? null : () => resume(d),
-                  trailing: IconButton(
-                    tooltip: '删除草稿',
-                    onPressed: busy ? null : () => remove(d),
-                    icon: const Icon(Icons.delete_outline),
+                SwipeDelete(
+                  key: ValueKey(d.key),
+                  onDelete: busy ? null : () => remove(d),
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      d.knowledge ? Icons.lightbulb_outline : Icons.edit_note,
+                      color: const Color(0xff2878f0),
+                    ),
+                    title: Text(
+                      d.data == null ? '无法读取的草稿' : d.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      '${bookName(d)}\n${d.savedAt}${d.data?['capture'] != null ? ' · 含识别记录' : ''}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    isThreeLine: true,
+                    onTap: busy ? null : () => resume(d),
+                    trailing: const Icon(Icons.chevron_right),
                   ),
                 ),
                 const Divider(height: 1),

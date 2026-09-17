@@ -129,7 +129,7 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
               padding: EdgeInsets.all(28),
               child: Column(
                 children: [
-                  BlueMascot(width: 90),
+                  SceneMascot(MascotScene.messages, width: 130),
                   SizedBox(height: 16),
                   Text('还没有改进消息'),
                   Text(
@@ -179,7 +179,7 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
               padding: EdgeInsets.all(32),
               child: Column(
                 children: [
-                  BlueMascot(width: 90),
+                  SceneMascot(MascotScene.messages, width: 130),
                   SizedBox(height: 16),
                   Text('还没有协作申请'),
                   Text(

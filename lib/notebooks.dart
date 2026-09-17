@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'swipe_delete.dart';
+import 'community.dart';
 import 'package:flutter/material.dart';
 import 'domain.dart';
 import 'store.dart';
@@ -18,7 +20,8 @@ bool isKnowledgeBook(StudyStore store, String id) {
 Map<String, String> notebooks(StudyStore store) {
   final result = <String, String>{};
   for (final q in store.questions.values) {
-    if ((q['notebookId'] as String? ?? '').isNotEmpty) {
+    if (q['deleted'] == false &&
+        (q['notebookId'] as String? ?? '').isNotEmpty) {
       result[q['notebookId'] as String] = q['notebookTitle'] as String;
     }
   }
@@ -29,6 +32,51 @@ Map<String, String> notebooks(StudyStore store) {
         (jsonDecode(e.value) as Json)['title'] as String;
   }
   return result;
+}
+
+Future<bool> confirmDeleteNotebook(
+  BuildContext context,
+  StudyStore store,
+  String id,
+) async {
+  final title = notebooks(store)[id] ?? '学习本';
+  final count = store.questions.values
+      .where((q) => q['notebookId'] == id && q['deleted'] == false)
+      .length;
+  final yes = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('删除这本学习本？'),
+      content: Text(
+        '将从本机移除「$title」及其中 $count 条内容。草稿和历史记录保留；已经发布的社区内容不会下架。删除前可先导出备份。',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('保留'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xffd83a49),
+          ),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('确认删除'),
+        ),
+      ],
+    ),
+  );
+  if (yes != true) return false;
+  try {
+    await store.deleteNotebook(id);
+    return true;
+  } catch (_) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('删除未完成，请重试')));
+    }
+    return false;
+  }
 }
 
 class NotebooksPage extends StatefulWidget {
@@ -75,35 +123,59 @@ class _AllNotebooksPageState extends State<AllNotebooksPage> {
           onChanged: (v) => setState(() => query = v.trim()),
         ),
         const SizedBox(height: 16),
-        if (notebooks(widget.store).isEmpty) const Text('还没有学习本。点击首页中央的加号创建。'),
+        FilledButton.icon(
+          icon: const Icon(Icons.add),
+          label: const Text('新建学习本'),
+          onPressed: () async {
+            await Navigator.push<void>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => NotebooksPage(
+                  store: widget.store,
+                  openLesson: widget.openLesson,
+                ),
+              ),
+            );
+            if (mounted) setState(() {});
+          },
+        ),
+        const SizedBox(height: 12),
+        if (notebooks(widget.store).isEmpty) const Text('还没有学习本。从第一本开始吧。'),
         ...notebooks(widget.store).entries
             .where((e) => e.value.contains(query))
             .map(
-              (e) => ListTile(
-                leading: Icon(
-                  isKnowledgeBook(widget.store, e.key)
-                      ? Icons.style_outlined
-                      : Icons.menu_book_outlined,
-                ),
-                title: Text(e.value),
-                subtitle: Text(
-                  '${widget.store.questions.values.where((q) => q['notebookId'] == e.key && q['deleted'] == false).length} 条内容',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () async {
-                  await Navigator.push<void>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => NotebooksPage(
-                        store: widget.store,
-                        knowledge: isKnowledgeBook(widget.store, e.key),
-                        initialBook: e.key,
-                        openLesson: widget.openLesson,
-                      ),
-                    ),
-                  );
+              (e) => SwipeDelete(
+                key: ValueKey(e.key),
+                onDelete: () async {
+                  await confirmDeleteNotebook(context, widget.store, e.key);
                   if (mounted) setState(() {});
                 },
+                child: ListTile(
+                  leading: Icon(
+                    isKnowledgeBook(widget.store, e.key)
+                        ? Icons.style_outlined
+                        : Icons.menu_book_outlined,
+                  ),
+                  title: Text(e.value),
+                  subtitle: Text(
+                    '${widget.store.questions.values.where((q) => q['notebookId'] == e.key && q['deleted'] == false).length} 条内容',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () async {
+                    await Navigator.push<void>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => NotebooksPage(
+                          store: widget.store,
+                          knowledge: isKnowledgeBook(widget.store, e.key),
+                          initialBook: e.key,
+                          openLesson: widget.openLesson,
+                        ),
+                      ),
+                    );
+                    if (mounted) setState(() {});
+                  },
+                ),
               ),
             ),
       ],
@@ -136,7 +208,7 @@ class _NotebooksPageState extends State<NotebooksPage> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('新建错题本'),
+        title: Text(widget.knowledge ? '新建知识点本' : '新建错题本'),
         content: TextField(
           controller: controller,
           maxLength: 80,
@@ -231,14 +303,20 @@ class _NotebooksPageState extends State<NotebooksPage> {
               label: Text(widget.knowledge ? '新建知识点本' : '新建错题本'),
             ),
             ...books.entries.map(
-              (e) => Card(
-                child: ListTile(
-                  title: Text(e.value),
-                  subtitle: Text(
-                    '${widget.store.questions.values.where((q) => q['notebookId'] == e.key && q['deleted'] == false).length} 道题',
+              (e) => SwipeDelete(
+                key: ValueKey(e.key),
+                onDelete: () async {
+                  await confirmDeleteNotebook(context, widget.store, e.key);
+                },
+                child: Card(
+                  child: ListTile(
+                    title: Text(e.value),
+                    subtitle: Text(
+                      '${widget.store.questions.values.where((q) => q['notebookId'] == e.key && q['deleted'] == false).length} 道题',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => setState(() => selected = e.key),
                   ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => setState(() => selected = e.key),
                 ),
               ),
             ),
@@ -305,7 +383,34 @@ class _NotebooksPageState extends State<NotebooksPage> {
                 ),
               ),
             ),
-            const Text('分享入口在“我的 → 共享题库 → 发布我的题目”。只有确认发布的题目会出现在公开错题本中。'),
+            const SizedBox(height: 20),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.public),
+              label: const Text('发布与社区管理'),
+              onPressed: () => Navigator.push<void>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CommunityPage(store: widget.store),
+                ),
+              ),
+            ),
+            TextButton.icon(
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('删除学习本'),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xffd83a49),
+              ),
+              onPressed: () async {
+                if (await confirmDeleteNotebook(
+                      context,
+                      widget.store,
+                      selected!,
+                    ) &&
+                    mounted) {
+                  setState(() => selected = null);
+                }
+              },
+            ),
           ],
         ],
       ),

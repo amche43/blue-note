@@ -70,7 +70,10 @@ void main() {
       expect(find.text('周日'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('day-2026-09-11')));
       await tester.pumpAndSettle();
-      expect(find.text('1 次学习贡献'), findsOneWidget);
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.text('2026-09-11 · 1 次贡献'), findsOneWidget);
+      await tester.tap(find.text('查看详情'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('先互换，再相加'));
       await tester.pumpAndSettle();
       expect(find.text('自己的推导'), findsOneWidget);

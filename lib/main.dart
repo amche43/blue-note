@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'settings_page.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,7 +13,6 @@ import 'study_tools.dart';
 import 'notebooks.dart';
 import 'knowledge_page.dart';
 import 'workbench.dart';
-import 'brand.dart';
 import 'entry_composer.dart';
 import 'studio_shell.dart';
 import 'backup_page.dart';
@@ -608,131 +608,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ];
   }
 
-  List<Widget> mine() => [
-    const Row(
-      children: [
-        BlueAvatar(width: 52),
-        SizedBox(width: 16),
-        Expanded(
-          child: Text(
-            '我的学习成果',
-            style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600),
-          ),
-        ),
-      ],
-    ),
-    const SizedBox(height: 14),
-    const Text('蓝笔 0.7 · 我的题库\n例题、笔记与复习均可离线使用。'),
-    const SizedBox(height: 22),
-    ListTile(
-      leading: const Icon(Icons.add_circle_outline),
-      title: const Text('添加我的题目'),
-      subtitle: const Text('保存题干、解答与关键点，默认私有'),
-      onTap: addQuestion,
-    ),
-    ListTile(
-      leading: const Icon(Icons.library_books_outlined),
-      title: const Text('我的错题本'),
-      subtitle: const Text('自建本子，按固定题号整理和分享'),
-      onTap: () => Navigator.push<void>(
-        context,
-        MaterialPageRoute(
-          builder: (_) =>
-              NotebooksPage(store: store, openLesson: (lesson) => open(lesson)),
-        ),
-      ),
-    ),
-    ListTile(
-      leading: const Icon(Icons.style_outlined),
-      title: const Text('必备知识点本'),
-      subtitle: const Text('自由创作知识卡片，先回想再展开'),
-      onTap: () => Navigator.push<void>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => NotebooksPage(
-            store: store,
-            knowledge: true,
-            openLesson: (lesson) => open(lesson),
-          ),
-        ),
-      ),
-    ),
-    ListTile(
-      leading: const Icon(Icons.psychology_outlined),
-      title: const Text('复习与回想'),
-      subtitle: const Text('按卡点筛选、收藏与混合练习'),
-      onTap: studyCenter,
-    ),
-    ListTile(
-      leading: const Icon(Icons.people_outline),
-      title: const Text('学习大厅 · 共享题库'),
-      subtitle: const Text('搜索公开本子，点赞、收藏与交流'),
-      onTap: () => Navigator.push<void>(
-        context,
-        MaterialPageRoute(builder: (_) => CommunityPage(store: store)),
-      ),
-    ),
-    ListTile(
-      leading: const Icon(Icons.feedback_outlined),
-      title: const Text('我的纠错反馈'),
-      subtitle: const Text('查看提交状态与处理回复'),
-      onTap: () => Navigator.push<void>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => CommunityPage(store: store, feedbackOnly: true),
-        ),
-      ),
-    ),
-    ListTile(
-      leading: const Icon(Icons.copy_outlined),
-      title: const Text('导出备份'),
-      subtitle: const Text('复制自建题目、笔记与学习记录'),
-      onTap: () => backupDialog(context, store),
-    ),
-    ListTile(
-      leading: const Icon(Icons.restore),
-      title: const Text('恢复备份'),
-      subtitle: const Text('合并记录，重复内容不重复计数'),
-      onTap: () => importDialog(context, store),
-    ),
-    ListTile(
-      leading: const Icon(Icons.sync),
-      title: const Text('跨设备同步'),
-      subtitle: Text(
-        store.settings['lastSync'] == null
-            ? '连接你自己的同步服务'
-            : '上次同步 ${store.settings['lastSync']!.substring(0, 16).replaceAll('T', ' ')}',
-      ),
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute<void>(builder: (_) => SyncPage(store: store)),
-      ),
-    ),
-    const Divider(height: 36),
-    const Text(
-      '内容说明',
-      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-    ),
-    const SizedBox(height: 10),
-    const Text(
-      '首批 7 个单元、16 道变式，覆盖高数、数据结构与计算机网络。部分内容根据你旧对话中的疑问重新编写，具体来源附在每道例题后。',
-    ),
-    const SizedBox(height: 12),
-    const Text(
-      '支持手动录题、编辑关键点、经你同意后复制题目包分享。相关知识点仅按关键词匹配参考例题。共享题库、评论、点赞和纠错反馈需连接本机测试后台。支持本机照片文字识别，复杂公式和图形仍需核对。',
-    ),
-    const SizedBox(height: 12),
-    const Text('复习采用首版间隔规则，参考作答与求助情况安排。点过答案不会被直接算作独立掌握。'),
-    TextButton(
-      onPressed: () => showLicensePage(
-        context: context,
-        applicationName: '蓝笔',
-        applicationVersion: '0.7.0',
-      ),
-      child: const Text('开源许可'),
-    ),
-  ];
-
   @override
   Widget build(BuildContext context) => tab >= 5
       ? Scaffold(
@@ -751,11 +626,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ),
           body: ListView(
             padding: const EdgeInsets.all(20),
-            children: tab == 5
-                ? library()
-                : tab == 6
-                ? mine()
-                : today(),
+            children: tab == 5 ? library() : today(),
           ),
         )
       : StudioShell(
@@ -763,7 +634,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           open: (lesson) => open(lesson),
           record: recordContent,
           library: () => setState(() => tab = 5),
-          settings: () => setState(() => tab = 6),
+          settings: () => Navigator.push<void>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AppSettingsPage(
+                store: store,
+                backup: () => backupDialog(context, store),
+                sync: () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(builder: (_) => SyncPage(store: store)),
+                ),
+              ),
+            ),
+          ),
           practice: studyCenter,
         );
 }

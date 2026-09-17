@@ -178,6 +178,10 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlsplit(self.path)
         path, method = parsed.path, self.command
         uid = user['id']
+        if path == '/v1/auth/logout' and method == 'POST':
+            db.execute('UPDATE users SET token=? WHERE id=?',
+                       (hashlib.sha256(secrets.token_bytes(32)).hexdigest(), uid))
+            return {'signedOut': True}
         import notebook_forks
         result=notebook_forks.route(db,uid,method,path,body,Invalid)
         if result is not None:return result

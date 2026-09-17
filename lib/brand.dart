@@ -43,6 +43,23 @@ class BrandCrop extends StatelessWidget {
   }
 }
 
+enum MascotScene { explore, capture, messages }
+
+class SceneMascot extends StatelessWidget {
+  final MascotScene scene;
+  final double width;
+  const SceneMascot(this.scene, {super.key, this.width = 150});
+  @override
+  Widget build(BuildContext context) => Image.asset(
+    'assets/brand/mascot-${scene.name}.png',
+    width: width,
+    height: width,
+    fit: BoxFit.contain,
+    excludeFromSemantics: true,
+    cacheWidth: (width * MediaQuery.devicePixelRatioOf(context)).round(),
+  );
+}
+
 class BlueMascot extends StatelessWidget {
   final double width;
   const BlueMascot({super.key, this.width = 100});

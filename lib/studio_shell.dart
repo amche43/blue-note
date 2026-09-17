@@ -1,4 +1,8 @@
 import 'dart:convert';
+import 'dart:async';
+import 'daily_greeting.dart';
+import 'my_entries_page.dart';
+import 'swipe_delete.dart';
 import 'package:flutter/material.dart';
 import 'brand.dart';
 import 'community.dart';
@@ -32,7 +36,44 @@ class StudioShell extends StatefulWidget {
   State<StudioShell> createState() => _StudioShellState();
 }
 
-class _StudioShellState extends State<StudioShell> {
+class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
+  Timer? midnight;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    scheduleGreeting();
+  }
+
+  void scheduleGreeting() {
+    midnight?.cancel();
+    final now = DateTime.now();
+    midnight = Timer(
+      DateTime(now.year, now.month, now.day + 1).difference(now),
+      () {
+        if (mounted) {
+          setState(() {});
+          scheduleGreeting();
+        }
+      },
+    );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      setState(() {});
+      scheduleGreeting();
+    }
+  }
+
+  @override
+  void dispose() {
+    midnight?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
   int tab = 0;
   bool exploreSaved = false;
   StudyStore get store => widget.store;
@@ -354,22 +395,29 @@ class _StudioShellState extends State<StudioShell> {
       ),
     ),
   );
-  Widget stat(String value, String label) => Expanded(
-    child: Column(
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: Color(0xff172952),
-          ),
+  Widget stat(String value, String label, {VoidCallback? onTap}) => Expanded(
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: Color(0xff172952),
+              ),
+            ),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 10, color: Colors.blueGrey),
+            ),
+          ],
         ),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 10, color: Colors.blueGrey),
-        ),
-      ],
+      ),
     ),
   );
   List<Widget> home() {
@@ -393,7 +441,7 @@ class _StudioShellState extends State<StudioShell> {
         children: [
           Expanded(
             child: Text(
-              '你好，${store.settings['profileName'] ?? '同学'}\n今天也继续加油吧！',
+              '你好，${store.settings['profileName'] ?? '同学'}\n${greetingFor(DateTime.now())}',
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
@@ -671,18 +719,45 @@ class _StudioShellState extends State<StudioShell> {
       const SizedBox(height: 20),
       Row(
         children: [
-          stat('${notebooks(store).length}', '学习本'),
+          stat('${notebooks(store).length}', '学习本', onTap: () => books()),
           stat(
             '${entries.where((q) => q['contentKind'] == 'knowledge').length}',
             '知识卡片',
+            onTap: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MyEntriesPage(
+                  store: store,
+                  knowledge: true,
+                  open: widget.open,
+                ),
+              ),
+            ),
           ),
           stat(
             '${entries.where((q) => q['contentKind'] != 'knowledge').length}',
             '题目',
+            onTap: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MyEntriesPage(
+                  store: store,
+                  knowledge: false,
+                  open: widget.open,
+                ),
+              ),
+            ),
           ),
           stat(
             '${store.events.where((e) => e.type == 'attempt').length}',
             '复习记录',
+            onTap: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    ContributionRecordsPage(store: store, onlyReviews: true),
+              ),
+            ),
           ),
         ],
       ),
@@ -718,23 +793,26 @@ class _StudioShellState extends State<StudioShell> {
         ],
       ),
       ...notebooks(store).entries.map(
-        (b) => ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.menu_book, color: studioBlue),
-          title: Text(b.value, style: const TextStyle(fontSize: 14)),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => books(isKnowledgeBook(store, b.key), b.key),
+        (b) => SwipeDelete(
+          key: ValueKey(b.key),
+          onDelete: () async {
+            await confirmDeleteNotebook(context, store, b.key);
+            if (mounted) setState(() {});
+          },
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.menu_book, color: studioBlue),
+            title: Text(b.value, style: const TextStyle(fontSize: 14)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => books(isKnowledgeBook(store, b.key), b.key),
+          ),
         ),
       ),
-      section('工具与设置'),
-      ListTile(
-        leading: const Icon(Icons.account_circle_outlined),
-        title: const Text('账号登录与注册'),
-        onTap: connectCommunity,
-      ),
+      const SizedBox(height: 20),
       ListTile(
         leading: const Icon(Icons.settings_outlined),
-        title: const Text('备份、同步与应用设置'),
+        title: const Text('设置'),
+        subtitle: const Text('账号、数据与应用偏好'),
         onTap: widget.settings,
       ),
     ];
@@ -765,7 +843,7 @@ class _StudioShellState extends State<StudioShell> {
         const SizedBox(height: 16),
         search(connectCommunity),
         const SizedBox(height: 32),
-        const Center(child: BlueMascot(width: 110)),
+        const Center(child: SceneMascot(MascotScene.explore, width: 180)),
         const SizedBox(height: 20),
         const Text('连接后台，发现大家的学习成果', textAlign: TextAlign.center),
         const Text(
@@ -805,7 +883,7 @@ class _StudioShellState extends State<StudioShell> {
           style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 28),
-        const Center(child: BlueMascot(width: 100)),
+        const Center(child: SceneMascot(MascotScene.messages, width: 180)),
         const SizedBox(height: 20),
         const Text('与伙伴一起建设学习本', textAlign: TextAlign.center),
         const Padding(

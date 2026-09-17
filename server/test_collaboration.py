@@ -6,6 +6,12 @@ class CollaborationTest(test_community.CommunityTest):
     # Do not inherit the unrelated legacy flow a second time.
     test_community_delivery_and_ownership = None
 
+    def test_logout_revokes_token(self):
+        self.call(self.a, 'GET', '/v1/me')
+        self.assertTrue(self.call(self.a, 'POST', '/v1/auth/logout', {})['signedOut'])
+        self.call(self.a, 'GET', '/v1/me', status=401)
+        self.call(self.b, 'GET', '/v1/me')
+
     def test_accounts_and_collaboration(self):
         reg=dict(username='learner_test',password='test-password-123',name='新同学',avatar=11)
         user=self.call('', 'POST','/v1/auth/register',reg)

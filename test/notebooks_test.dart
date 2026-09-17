@@ -29,7 +29,7 @@ void main(){
     await tester.pumpWidget(MaterialApp(home:PhotoImportPage(store:store)));await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField),'识别出的题干');await tester.pumpAndSettle();
     final save=find.widgetWithText(FilledButton,'填入题干，继续编辑');
-    await tester.ensureVisible(save);await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(save, 200, scrollable: find.byType(Scrollable).first);await tester.pumpAndSettle();
     expect(tester.widget<FilledButton>(save).onPressed,isNull);
     await tester.tap(find.byType(CheckboxListTile));await tester.pumpAndSettle();
     expect(tester.widget<FilledButton>(save).onPressed,isNotNull);
