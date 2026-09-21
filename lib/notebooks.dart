@@ -4,7 +4,7 @@ import 'community.dart';
 import 'package:flutter/material.dart';
 import 'domain.dart';
 import 'store.dart';
-import 'question_editor.dart';
+import 'chapter_page.dart';
 import 'fork_updates.dart';
 import 'adoption_page.dart';
 
@@ -356,37 +356,52 @@ class _NotebooksPageState extends State<NotebooksPage> {
                 label: const Text('采纳历史与撤销'),
               ),
             FilledButton.icon(
-              onPressed: () => Navigator.push<String>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => QuestionEditor(
-                    store: widget.store,
-                    notebookId: selected,
-                    notebookTitle: books[selected],
-                    knowledge: widget.knowledge,
+              onPressed: () async {
+                await createChapter(
+                  context,
+                  widget.store,
+                  selected!,
+                  books[selected]!,
+                );
+                if (mounted) setState(() {});
+              },
+              icon: const Icon(Icons.create_new_folder_outlined),
+              label: const Text('新建章节'),
+            ),
+            for (final chapter in notebookChapters(widget.store, selected!))
+              ListTile(
+                key: ValueKey('$selected:$chapter'),
+                leading: const Icon(
+                  Icons.folder_outlined,
+                  color: Color(0xff2878f0),
+                ),
+                title: Text(chapter),
+                subtitle: Text(
+                  '${list.where((e) => chapterName(e.value) == chapter).length} 条内容',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ChapterPage(
+                      store: widget.store,
+                      book: selected!,
+                      title: books[selected]!,
+                      chapter: chapter,
+                      openLesson: widget.openLesson,
+                    ),
                   ),
                 ),
               ),
-              icon: const Icon(Icons.add),
-              label: Text(widget.knowledge ? '添加知识卡片' : '在这本里添加题目'),
-            ),
-            ...list.map(
-              (e) => Card(
-                child: ListTile(
-                  title: Text(
-                    '第${e.value['questionNumber']}条 · ${e.value['title']}',
-                  ),
-                  subtitle: Text(e.value['subject'] as String),
-                  onTap: () => widget.openLesson(
-                    widget.store.lessons.firstWhere((l) => l.id == e.key),
-                  ),
-                ),
+            if (notebookChapters(widget.store, selected!).isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('先创建第一章，再开始记录题目。'),
               ),
-            ),
             const SizedBox(height: 20),
             OutlinedButton.icon(
               icon: const Icon(Icons.public),
-              label: const Text('发布与社区管理'),
+              label: const Text('上传至社区 / 管理已发布内容'),
               onPressed: () => Navigator.push<void>(
                 context,
                 MaterialPageRoute(

@@ -1,3 +1,4 @@
+import 'ink_document.dart';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -131,20 +132,31 @@ const achievements = [
   ),
 ];
 const tierNames = ['尚未达成', '初级', '进阶', '优秀', '卓越'];
+bool annotatedCanvas(Json q) {
+  try {
+    final doc = InkDocument.decode(q['canvas'] as String? ?? '');
+    return doc.elements.any((e) => e.note.trim().isNotEmpty);
+  } catch (_) {
+    return false;
+  }
+}
+
 bool validLearning(Json q) =>
     q['deleted'] != true &&
-    (q['prompt'] as String? ?? '').trim().isNotEmpty &&
-    [
-      'trigger',
-      'action',
-      'answer',
-      'firstThought',
-      'errorReason',
-      'summary',
-      'conditions',
-      'pitfall',
-    ].any((k) => (q[k] as String? ?? '').trim().isNotEmpty);
+    (annotatedCanvas(q) ||
+        ((q['prompt'] as String? ?? '').trim().isNotEmpty &&
+            [
+              'trigger',
+              'action',
+              'answer',
+              'firstThought',
+              'errorReason',
+              'summary',
+              'conditions',
+              'pitfall',
+            ].any((k) => (q[k] as String? ?? '').trim().isNotEmpty)));
 String learningFingerprint(Json q) => jsonEncode([
+  if ((q['canvas'] as String? ?? '').isNotEmpty) q['canvas'],
   for (final k in [
     'prompt',
     'trigger',

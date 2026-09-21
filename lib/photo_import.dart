@@ -5,10 +5,12 @@ import 'community.dart';
 import 'store.dart';
 import 'brand.dart';
 import 'domain.dart';
+import 'question_photos.dart';
 
 class PhotoImportPage extends StatefulWidget {
   final StudyStore store;
-  const PhotoImportPage({super.key, required this.store});
+  final bool answer;
+  const PhotoImportPage({super.key, required this.store, this.answer = false});
   @override
   State<PhotoImportPage> createState() => _PhotoImportPageState();
 }
@@ -96,7 +98,7 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('照片转题干')),
+    appBar: AppBar(title: Text(widget.answer ? '添加答案照片' : '添加题目照片')),
     body: ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -124,6 +126,30 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
         ),
         if (photo != null) ...[
           Image.memory(photo!, height: 260, fit: BoxFit.contain),
+          FilledButton.icon(
+            icon: const Icon(Icons.photo_outlined),
+            label: const Text('直接使用照片，不识别'),
+            onPressed: busy
+                ? null
+                : () {
+                    try {
+                      final encoded = validatePhoto(base64Encode(photo!));
+                      Navigator.pop(context, <String, dynamic>{
+                        'text': '',
+                        'photo': encoded,
+                        'title': '',
+                        'capture': {
+                          'source_image': encoded,
+                          'ocr_raw': null,
+                          'ai_parsed': null,
+                          'source_type': 'photo',
+                        },
+                      });
+                    } catch (_) {
+                      setState(() => error = '照片过大，请裁剪后重试');
+                    }
+                  },
+          ),
           CheckboxListTile(
             value: consent,
             onChanged: busy
@@ -154,7 +180,9 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
           maxLength: 18000,
           enabled: !busy,
           onChanged: (_) => setState(() => checked = false),
-          decoration: const InputDecoration(labelText: '识别草稿，可对照照片修改'),
+          decoration: InputDecoration(
+            labelText: widget.answer ? '答案识别草稿，请核对' : '识别草稿，可对照照片修改',
+          ),
         ),
         CheckboxListTile(
           value: checked,
@@ -166,6 +194,8 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
               ? null
               : () => Navigator.pop(context, <String, dynamic>{
                   'text': text.text.trim(),
+                  'title': '',
+                  'photo': '',
                   'capture': {
                     'source_image': photo == null ? null : base64Encode(photo!),
                     'ocr_raw': rawResult,
@@ -177,7 +207,7 @@ class _PhotoImportPageState extends State<PhotoImportPage> {
           child: const Text('填入题干，继续编辑'),
         ),
         const Text(
-          '保存条目后，照片和识别记录仅留在当前设备，不随社区发布或文本备份上传。公式、图形与手写内容仍需人工核对。',
+          '直接使用的照片是正式内容，作者确认公开时会一起分享；电子版识别原图仅作私人核对记录。复杂公式与手写内容需人工核对。',
           style: TextStyle(fontSize: 13),
         ),
       ],

@@ -6,9 +6,14 @@ import time
 
 DETAILS=('trigger','action','answer','firstThought','errorReason','summary','conditions','pitfall')
 def valid(q):
-    return bool(q.get('prompt','').strip()) and any(q.get(k,'').strip() for k in DETAILS)
+    try:
+        canvas=json.loads(q.get('canvas') or '{}')
+        annotated=any(e.get('note','').strip() for e in canvas.get('elements',[]))
+    except (ValueError,TypeError,AttributeError):
+        annotated=False
+    return annotated or (bool(q.get('prompt','').strip()) and any(q.get(k,'').strip() for k in DETAILS))
 def fingerprint(q):
-    return tuple(''.join(q.get(k,'').split()) for k in ('prompt',)+DETAILS)
+    return tuple(''.join(q.get(k,'').split()) for k in ('prompt',)+DETAILS)+(q.get('canvas',''),)
 def week(ns):
     d=dt.datetime.fromtimestamp(ns/1e9,dt.timezone.utc).date()
     return (d-dt.timedelta(days=d.weekday())).isoformat()

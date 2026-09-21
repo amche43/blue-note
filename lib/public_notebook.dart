@@ -7,7 +7,12 @@ import 'store.dart';
 import 'improvements_page.dart';
 import 'learning_profile_page.dart';
 import 'notebooks.dart';
-import 'question_editor.dart';
+import 'ink_page.dart';
+
+String chapterOf(Json entry) {
+  final chapter = entry['package']['question']['chapter'] as String? ?? '';
+  return chapter.trim().isEmpty ? '未分章' : chapter;
+}
 
 class PublicNotebookPage extends StatefulWidget {
   final StudyStore store;
@@ -50,8 +55,7 @@ class _PublicNotebookPageState extends State<PublicNotebookPage> {
             await Navigator.push<void>(
               context,
               MaterialPageRoute(
-                builder: (_) =>
-                    QuestionEditor(store: widget.store, id: lesson.id),
+                builder: (_) => InkPage(store: widget.store, id: lesson.id),
               ),
             );
           },
@@ -368,32 +372,57 @@ class _PublicNotebookPageState extends State<PublicNotebookPage> {
                   padding: EdgeInsets.all(20),
                   child: Text('这里的内容暂时已撤回。'),
                 ),
-              ...entries.map((entry) {
-                final q = entry['package']['question'] as Json;
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
+              for (final chapter in entries.map(chapterOf).toSet())
+                ListTile(
+                  title: Text(chapter),
                   leading: const Icon(
-                    Icons.article_outlined,
+                    Icons.folder_outlined,
                     color: Color(0xff2878f0),
-                  ),
-                  title: Text(q['title'] as String),
-                  subtitle: Text(
-                    '第 ${q['questionNumber']} 条 · ${q['contentKind'] == 'knowledge' ? '知识点' : '例题'}',
-                    style: const TextStyle(fontSize: 12),
                   ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.push<void>(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => SharedQuestionPage(
-                        store: widget.store,
-                        client: widget.client,
-                        initial: entry,
+                      builder: (_) => Scaffold(
+                        appBar: AppBar(title: Text(chapter)),
+                        body: ListView(
+                          padding: const EdgeInsets.all(20),
+                          children: [
+                            ...entries
+                                .where((entry) => chapterOf(entry) == chapter)
+                                .map((entry) {
+                                  final q =
+                                      entry['package']['question'] as Json;
+                                  return ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: const Icon(
+                                      Icons.article_outlined,
+                                      color: Color(0xff2878f0),
+                                    ),
+                                    title: Text(q['title'] as String),
+                                    subtitle: Text(
+                                      '第 ${q['questionNumber']} 条 · ${q['contentKind'] == 'knowledge' ? '知识点' : '例题'}',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: () => Navigator.push<void>(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => SharedQuestionPage(
+                                          store: widget.store,
+                                          client: widget.client,
+                                          initial: entry,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                );
-              }),
+                ),
               const Text(
                 '讨论附在每条内容下，点击条目查看与交流。',
                 style: TextStyle(fontSize: 12, color: Colors.blueGrey),

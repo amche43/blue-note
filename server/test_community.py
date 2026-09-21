@@ -48,6 +48,24 @@ class CommunityTest(unittest.TestCase):
             self.assertEqual(response.status, status)
             return json.load(response)
 
+    def test_canvas_publication_preserves_ink_and_rejects_malformed_documents(self):
+        self.assertTrue(self.call(self.a,'GET','/v1/photo-capabilities')['canvasEntries'])
+        element = dict(id='stroke',kind='highlight',points=[[10,20],[100,20]],box=[0,0,0,0],
+                       color=0xfff9ca45,width=20,text='',note='先检查公式条件',image='',rows=3,columns=3)
+        document = dict(version=1,height=1600,ruled=True,elements=[element])
+        q = {key: '' for key in app.FIELDS}
+        q.update(title='手写画布',subject='高数',deleted=False,canvas=json.dumps(document))
+        body = dict(requestId='9ac0'*8,question=q,consent=True)
+        published = self.call(self.a,'POST','/v1/questions',body)
+        try:
+            package = self.call(self.b,'GET','/v1/questions/'+published['id'])['package']
+            self.assertEqual(json.loads(package['question']['canvas']), document)
+            bad = {**document,'elements':[{**element,'points':[[float('inf'),20]]}]}
+            self.call(self.a,'POST','/v1/questions',{**body,'requestId':'9ac1'*8,'question':{**q,'canvas':json.dumps(bad)}},400)
+            self.call(self.a,'POST','/v1/questions',{**body,'requestId':'9ac2'*8,'question':{**q,'canvas':json.dumps({**document,'elements':[]})}},400)
+        finally:
+            self.call(self.a,'DELETE','/v1/questions/'+published['id'])
+
     def test_community_delivery_and_ownership(self):
         self.call('bad', 'GET', '/v1/me', status=401)
         q = {key: '' for key in app.FIELDS}

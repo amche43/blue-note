@@ -1,9 +1,11 @@
+import 'ink_view.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'domain.dart';
 import 'questions.dart';
+import 'question_photos.dart';
 import 'store.dart';
 import 'hall.dart';
 import 'brand.dart';
@@ -183,12 +185,13 @@ class FeedbackRepository {
 class CommunityPage extends StatefulWidget {
   final StudyStore store;
   final bool feedbackOnly;
-  final String? initialBook;
+  final String? initialBook, initialQuestion;
   const CommunityPage({
     super.key,
     required this.store,
     this.feedbackOnly = false,
     this.initialBook,
+    this.initialQuestion,
   });
   @override
   State<CommunityPage> createState() => _CommunityPageState();
@@ -311,7 +314,7 @@ class _CommunityPageState extends State<CommunityPage> {
     final options = widget.store.questions.entries
         .where((e) => e.value['deleted'] == false)
         .toList();
-    String? selected;
+    String? selected = widget.initialQuestion;
     bool consent = false;
     final chosen = await showDialog<String>(
       context: context,
@@ -344,6 +347,24 @@ class _CommunityPageState extends State<CommunityPage> {
                   if (selected != null) ...[
                     const Divider(),
                     const Text('本次公开内容预览'),
+                    if ((widget.store.questions[selected]!['canvas']
+                                as String? ??
+                            '')
+                        .isNotEmpty)
+                      InkPreview(
+                        widget.store.questions[selected]!['canvas'] as String,
+                      ),
+                    QuestionPhoto(
+                      widget.store.questions[selected]!['questionPhoto']
+                              as String? ??
+                          '',
+                    ),
+                    QuestionPhoto(
+                      widget.store.questions[selected]!['answerPhoto']
+                              as String? ??
+                          '',
+                      label: '答案照片',
+                    ),
                     Text(
                       [
                             'notebookTitle',
@@ -371,7 +392,7 @@ class _CommunityPageState extends State<CommunityPage> {
                   CheckboxListTile(
                     value: consent,
                     onChanged: (v) => update(() => consent = v ?? false),
-                    title: const Text('我有权分享并同意公开以上内容、思考过程及来源'),
+                    title: const Text('我有权分享并同意公开以上画布（包含思路标记）、正文、照片、思考过程及来源'),
                     subtitle: const Text('不包含私人笔记和学习记录。撤回后，别人已下载的副本仍会保留。'),
                   ),
                 ],
@@ -395,6 +416,29 @@ class _CommunityPageState extends State<CommunityPage> {
     );
     if (chosen == null || !mounted) return;
     await run(() async {
+      final q = widget.store.questions[chosen]!;
+      if ((q['canvas'] as String? ?? '').isNotEmpty) {
+        final support = await client!.request('GET', '/v1/photo-capabilities');
+        if (support['canvasEntries'] != true) {
+          throw const FormatException('请先更新并重启本机后台，再发布画布；本机内容仍保留。');
+        }
+      }
+      if ([
+        'questionPhoto',
+        'answerPhoto',
+      ].any((k) => (q[k] as String? ?? '').isNotEmpty)) {
+        try {
+          final support = await client!.request(
+            'GET',
+            '/v1/photo-capabilities',
+          );
+          if (support['photoEntries'] != true) {
+            throw const FormatException('unsupported');
+          }
+        } catch (_) {
+          throw const FormatException('后台尚未确认支持照片内容，请更新并重启后台后再发布；本机照片仍保留。');
+        }
+      }
       final revisions =
           widget.store.events
               .where((e) => e.type == 'question' && e.lessonId == chosen)
@@ -837,6 +881,18 @@ class _SharedQuestionPageState extends State<SharedQuestionPage> {
             label: const Text('复制本题引用'),
           ),
 
+          if ((q['canvas'] as String? ?? '').isNotEmpty) ...[
+            const Text('手写画布 · 双指缩放，点击高亮查看思路标记'),
+            InkPreview(q['canvas'] as String),
+          ],
+          QuestionPhoto(q['questionPhoto'] as String? ?? ''),
+          if ((q['answerPhoto'] as String? ?? '').isNotEmpty)
+            ExpansionTile(
+              title: const Text('查看答案照片'),
+              children: [
+                QuestionPhoto(q['answerPhoto'] as String, label: '答案照片'),
+              ],
+            ),
           ...[
                 'prompt',
                 'formula',

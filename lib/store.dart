@@ -75,7 +75,7 @@ class StudyStore extends ChangeNotifier {
     final revisions = events.where((e) => e.type == 'question').toList()
       ..sort(compareEvents);
     for (final event in revisions) {
-      questions[event.lessonId] = event.payload;
+      questions[event.lessonId] = validateQuestion(event.payload);
     }
     lessons = [
       ...bundledLessons,
@@ -126,8 +126,8 @@ class StudyStore extends ChangeNotifier {
         );
         if (rows.isEmpty ||
             !mapEquals(
-              jsonDecode(rows.first['payload'] as String) as Json,
-              e.value,
+              validateQuestion(jsonDecode(rows.first['payload'] as String)),
+              validateQuestion(e.value),
             )) {
           throw const FormatException('原条目已变动，请重新核对或另存为新条目');
         }
@@ -322,6 +322,11 @@ class StudyStore extends ChangeNotifier {
             return n > v ? n : v;
           });
       prepared['questionNumber'] = '${maxNumber + 1}';
+    }
+    if ((prepared['title'] as String? ?? '').trim().isEmpty) {
+      prepared['title'] = book.isEmpty
+          ? '未命名题目'
+          : '第${prepared['questionNumber']}题';
     }
     final data = validateQuestion(prepared);
     final key = id ?? 'user-${newId()}';

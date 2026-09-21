@@ -75,8 +75,9 @@ class FullBackup {
             throw const FormatException('采纳历史格式无效');
           }
           final event = events.firstWhere((ev) => ev.id == r['eventId']);
+          final recorded = validateQuestion(event.payload);
           if (event.lessonId != r['lesson'] ||
-              questionLimits.keys.any((k) => event.payload[k] != after[k])) {
+              questionLimits.keys.any((k) => recorded[k] != after[k])) {
             throw const FormatException('采纳历史与修改记录不一致');
           }
         } else if (!settings.containsKey('adoption:${r['id']}')) {
@@ -101,7 +102,13 @@ class FullBackup {
             b is! Json ||
             b['title'] is! String ||
             (b['title'] as String).trim().isEmpty ||
-            !['knowledge', 'question'].contains(b['kind'])) {
+            !['knowledge', 'question'].contains(b['kind']) ||
+            (b['chapters'] != null &&
+                (b['chapters'] is! List ||
+                    (b['chapters'] as List).length > 300 ||
+                    (b['chapters'] as List).any(
+                      (c) => c is! String || c.trim().isEmpty || c.length > 120,
+                    )))) {
           throw const FormatException('学习本设置无效');
         }
       } else if (e.key.startsWith('favorite:') &&

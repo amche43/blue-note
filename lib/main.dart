@@ -1,5 +1,8 @@
+import 'ink_view.dart';
+import 'ink_page.dart';
 import 'dart:async';
 import 'settings_page.dart';
+import 'question_photos.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -339,8 +342,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await Navigator.push(
       context,
       MaterialPageRoute<void>(
-        builder: (_) =>
-            store.questions[lesson.id]?['contentKind'] == 'knowledge'
+        builder: (_) => !review && store.questions.containsKey(lesson.id)
+            ? InkPage(store: store, id: lesson.id)
+            : store.questions[lesson.id]?['contentKind'] == 'knowledge'
             ? KnowledgePage(store: store, id: lesson.id)
             : LessonPage(store: store, lesson: lesson, review: review),
       ),
@@ -773,7 +777,7 @@ class _LessonPageState extends State<LessonPage> {
     final result = await Navigator.push<String>(
       context,
       MaterialPageRoute(
-        builder: (_) => QuestionEditor(store: widget.store, id: lesson.id),
+        builder: (_) => InkPage(store: widget.store, id: lesson.id),
       ),
     );
     if (!mounted) return;
@@ -866,7 +870,13 @@ class _LessonPageState extends State<LessonPage> {
       style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w600),
     ),
     const SizedBox(height: 20),
+    if ((widget.store.questions[lesson.id]?['canvas'] as String? ?? '')
+        .isNotEmpty)
+      InkPreview(widget.store.questions[lesson.id]!['canvas'] as String),
     Text(lesson.prompt),
+    QuestionPhoto(
+      widget.store.questions[lesson.id]?['questionPhoto'] as String? ?? '',
+    ),
     Formula(lesson.formula),
     if (lesson.data['custom'] == true)
       ...{'firstThought': '我的第一反应', 'errorReason': '错误原因', 'summary': '一句话总结'}
@@ -934,6 +944,10 @@ class _LessonPageState extends State<LessonPage> {
         ),
     ],
     if (steps > 0) ...[
+      QuestionPhoto(
+        widget.store.questions[lesson.id]?['answerPhoto'] as String? ?? '',
+        label: '答案照片',
+      ),
       const Divider(height: 32),
       const Text(
         '为什么这样想到',

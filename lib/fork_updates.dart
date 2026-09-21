@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'community.dart';
 import 'domain.dart';
 import 'store.dart';
-import 'question_editor.dart';
+import 'ink_page.dart';
 import 'learning_fields.dart';
 import 'adoption_page.dart';
 
@@ -203,7 +203,7 @@ class _ForkUpdatesPageState extends State<ForkUpdatesPage> {
       await Navigator.push<String>(
         context,
         MaterialPageRoute(
-          builder: (_) => QuestionEditor(store: widget.store, id: item.localId),
+          builder: (_) => InkPage(store: widget.store, id: item.localId),
         ),
       );
       if (mounted) setState(() {});

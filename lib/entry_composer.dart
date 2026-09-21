@@ -4,6 +4,7 @@ import 'store.dart';
 import 'questions.dart';
 import 'notebooks.dart';
 import 'photo_import.dart';
+import 'question_photos.dart';
 import 'editor_draft.dart';
 
 class EntryComposer extends StatefulWidget {
@@ -28,12 +29,20 @@ class _EntryComposerState extends State<EntryComposer> {
       reason = TextEditingController(),
       summary = TextEditingController(),
       subject = TextEditingController(text: '高等数学');
+  final questionPhoto = TextEditingController(),
+      answerPhoto = TextEditingController(),
+      answer = TextEditingController(),
+      chapter = TextEditingController();
   Json? capture;
   int step = 0;
   bool busy = false, dirty = false;
   String kind = 'question', book = '', error = '';
   late final EditorDraft draft;
   Map<String, TextEditingController> get draftFields => {
+    'questionPhoto': questionPhoto,
+    'answerPhoto': answerPhoto,
+    'answer': answer,
+    'chapter': chapter,
     'title': title,
     'prompt': prompt,
     'breakthrough': breakthrough,
@@ -49,6 +58,8 @@ class _EntryComposerState extends State<EntryComposer> {
     final initial = widget.initialCapture;
     if (initial != null) {
       prompt.text = initial['text'] as String;
+      questionPhoto.text = initial['photo'] as String? ?? '';
+      title.text = initial['title'] as String? ?? '';
       capture = initial['capture'] as Json;
       dirty = true;
     }
@@ -110,6 +121,10 @@ class _EntryComposerState extends State<EntryComposer> {
   void dispose() {
     draft.dispose();
     for (final c in [
+      questionPhoto,
+      answerPhoto,
+      answer,
+      chapter,
       title,
       prompt,
       breakthrough,
@@ -135,16 +150,11 @@ class _EntryComposerState extends State<EntryComposer> {
       final id = await widget.store.saveQuestion(
         {
           ...blankQuestion(),
-          'title': title.text.trim().isEmpty
-              ? prompt.text
-                    .trim()
-                    .split('\n')
-                    .first
-                    .substring(
-                      0,
-                      prompt.text.trim().split('\n').first.length.clamp(0, 60),
-                    )
-              : title.text,
+          'title': title.text,
+          'questionPhoto': questionPhoto.text,
+          'answerPhoto': answerPhoto.text,
+          'answer': answer.text,
+          'chapter': chapter.text,
           'prompt': prompt.text,
           'subject': subject.text,
           'contentKind': kind,
@@ -247,7 +257,8 @@ class _EntryComposerState extends State<EntryComposer> {
               onPressed: busy
                   ? null
                   : () async {
-                      if (prompt.text.trim().isNotEmpty) {
+                      if (prompt.text.trim().isNotEmpty ||
+                          questionPhoto.text.isNotEmpty) {
                         final replace = await showDialog<bool>(
                           context: context,
                           builder: (ctx) => AlertDialog(
@@ -275,6 +286,10 @@ class _EntryComposerState extends State<EntryComposer> {
                       if (result != null && mounted) {
                         setState(() {
                           prompt.text = result['text'] as String;
+                          questionPhoto.text = result['photo'] as String? ?? '';
+                          if (title.text.trim().isEmpty) {
+                            title.text = result['title'] as String? ?? '';
+                          }
                           capture = result['capture'] as Json;
                           dirty = true;
                         });
@@ -298,7 +313,10 @@ class _EntryComposerState extends State<EntryComposer> {
                       draft.schedule();
                     }),
             ),
-            input(title, '标题（可选，留空从正文提取）', max: 120),
+            input(title, '题目标题（选填，留空使用编号）', max: 120),
+            input(chapter, '章节（可选，留空归入未分章）', max: 120),
+            if (questionPhoto.text.isNotEmpty)
+              QuestionPhoto(questionPhoto.text),
             input(subject, '学科', max: 60),
             input(
               prompt,
@@ -310,6 +328,58 @@ class _EntryComposerState extends State<EntryComposer> {
           ],
           if (step == 1) ...[
             const Text('真正重要的是，你是怎么想的。以下都可以稍后补充。'),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              label: const Text('添加 / 识别答案照片'),
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final result = await Navigator.push<Json>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PhotoImportPage(
+                            store: widget.store,
+                            answer: true,
+                          ),
+                        ),
+                      );
+                      if (result == null || !mounted) return;
+                      if (answer.text.isNotEmpty ||
+                          answerPhoto.text.isNotEmpty) {
+                        final yes = await showDialog<bool>(
+                          context: this.context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('替换现有答案？'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('保留'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('替换'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (yes != true || !mounted) return;
+                      }
+                      setState(() {
+                        answer.text = result['text'] as String;
+                        answerPhoto.text = result['photo'] as String? ?? '';
+                        capture = {
+                          ...?capture,
+                          'answer_capture': result['capture'],
+                        };
+                        dirty = true;
+                        draft.schedule();
+                      });
+                    },
+            ),
+            if (answerPhoto.text.isNotEmpty)
+              QuestionPhoto(answerPhoto.text, label: '答案照片'),
+            input(answer, '答案文字（可选）', lines: 3, max: 18000),
+
             input(breakthrough, '关键突破点：看到什么，就该想到什么', lines: 3),
             ExpansionTile(
               title: const Text('多记一点思考（可选）'),
@@ -379,9 +449,10 @@ class _EntryComposerState extends State<EntryComposer> {
                 ? null
                 : () {
                     if (step == 0 &&
-                        (prompt.text.trim().isEmpty ||
+                        ((prompt.text.trim().isEmpty &&
+                                questionPhoto.text.isEmpty) ||
                             subject.text.trim().isEmpty)) {
-                      setState(() => error = '请填写正文和学科');
+                      setState(() => error = '请填写正文或添加题目照片，并选择学科');
                       return;
                     }
                     if (step < 2) {

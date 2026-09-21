@@ -60,6 +60,13 @@ def run():
             restored=post([],schema=2)
             assert restored['schemaVersion']==2 and len(restored['events'])==4
             assert next(e for e in restored['events'] if e['type']=='question')['payload']['title']=='自己的题目'
+            ink=json.dumps(dict(version=1,height=1600.0,ruled=True,elements=[dict(id='stroke',kind='pen',points=[[10.5,20.5],[100.0,200.0]])]))
+            canvas=dict(question,id='4'*32,payload=dict(fields,prompt='',canvas=ink))
+            synced=post([canvas],schema=2)
+            assert next(e for e in synced['events'] if e['id']=='4'*32)['payload']['canvas']==ink
+            malformed=dict(question,id='5'*32,payload=dict(fields,prompt='',canvas='{"version":1,"elements":[],"ruled":true}'))
+            try:post([malformed],schema=2);raise AssertionError('Empty canvas accepted')
+            except urllib.error.HTTPError as error:assert error.code==400
             print('PASS: authentication, two-device merge, idempotency, atomic conflicts, restart persistence, v1/v2 migration and custom questions')
         finally:
             process.terminate();process.wait(timeout=10)

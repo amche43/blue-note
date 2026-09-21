@@ -1,7 +1,7 @@
 name: blue_note
 description: 从例题出发，记住下一次解题的关键一步。
 publish_to: none
-version: 0.20.0+20
+version: 0.22.0+22
 environment:
   sdk: '>=3.10.0 <4.0.0'
 dependencies:

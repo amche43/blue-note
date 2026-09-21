@@ -14,7 +14,7 @@ import time
 from urllib.parse import urlsplit, parse_qs
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-LIMIT = 512 * 1024
+LIMIT = 10 * 1024 * 1024
 FIELDS = dict(title=120, subject=60, chapter=120, prompt=18000, formula=4000,
               answer=18000, trigger=4000, action=4000, conditions=4000,
               pitfall=4000, source=1000, origin=80)
@@ -101,8 +101,32 @@ def package(body, author):
     value = body.get('question')
     if not isinstance(value, dict) or value.get('deleted') is not False:
         raise Invalid('题目格式不正确')
-    q = {key: text(value, key, size, key in ('title', 'subject', 'prompt'))
+    q = {key: text(value, key, size, key in ('title', 'subject'))
          for key, size in FIELDS.items()}
+    for field in ('questionPhoto', 'answerPhoto'):
+        encoded = value.get(field, '')
+        if not isinstance(encoded, str) or len(encoded) > 4 * 1024 * 1024:
+            raise Invalid('单张照片过大，请裁剪后重试')
+        if encoded:
+            try:
+                import base64, io
+                from PIL import Image
+                raw = base64.b64decode(encoded, validate=True)
+                with Image.open(io.BytesIO(raw)) as image:
+                    if image.format not in ('PNG', 'JPEG') or image.width * image.height > 20000000:
+                        raise ValueError('image limits')
+                    image.verify()
+            except Exception:
+                raise Invalid('照片格式无效，请重新选择 JPEG 或 PNG')
+        q[field] = encoded
+    q['canvas'] = value.get('canvas', '')
+    try:
+        from ink_schema import validate_canvas
+        has_canvas = validate_canvas(q['canvas'])
+    except Exception:
+        raise Invalid('画布格式无效或过大，请拆分题目后重试')
+    if not has_canvas and not q['prompt'] and not q['questionPhoto']:
+        raise Invalid('需要题目正文或题目照片')
     q.update(origin='', deleted=False)
     for field in ('firstThought','errorReason','summary'):
         if field in value: q[field]=text(value,field,4000,False)
@@ -178,6 +202,8 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlsplit(self.path)
         path, method = parsed.path, self.command
         uid = user['id']
+        if path == '/v1/photo-capabilities' and method == 'GET':
+            return {'photoEntries': True, 'canvasEntries': True, 'maxEncodedBytes': 4 * 1024 * 1024}
         if path == '/v1/auth/logout' and method == 'POST':
             db.execute('UPDATE users SET token=? WHERE id=?',
                        (hashlib.sha256(secrets.token_bytes(32)).hexdigest(), uid))
@@ -366,7 +392,7 @@ class Handler(BaseHTTPRequestHandler):
         liked = db.execute('SELECT 1 FROM likes WHERE question=? AND owner=?', (row['id'], uid)).fetchone() is not None
         value = json.loads(row['package'])
         if summary:
-            value = {'author': value['author'], 'question': {k:value['question'].get(k,'') for k in ['title','notebookTitle','questionNumber','contentKind']}}
+            value = {'author': value['author'], 'question': {k:value['question'].get(k,'') for k in ['title','chapter','notebookTitle','questionNumber','contentKind']}}
         import improvements
         return {'id': row['id'], 'ownerId':row['owner'], 'revision':improvements.revision(row['package']), 'package': value, 'mine': row['owner'] == uid, 'likes': count, 'liked': liked,'avatar':row['avatar'],'avatarImage':row['avatarImage']}
 

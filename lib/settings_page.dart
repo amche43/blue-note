@@ -138,7 +138,7 @@ class AppSettingsPage extends StatelessWidget {
                 () => showAboutDialog(
                   context: context,
                   applicationName: 'Blue-note / 蓝笔',
-                  applicationVersion: '0.20.0',
+                  applicationVersion: '0.22.0',
                   children: const [
                     Text(
                       '个人学习创造知识，开源协作完善知识。题目、知识卡片和复习可离线使用；社区需连接你配置的后台。识别结果请核对后保存。',

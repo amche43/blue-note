@@ -54,8 +54,32 @@ public final class BlueNoteServer {
           if (!(payload.get(field.getKey()) instanceof String text) || text.length() > field.getValue())
             throw new IllegalArgumentException("Invalid question field");
         }
-        for (String required : List.of("title", "subject", "prompt"))
+        for (String required : List.of("title", "subject"))
           if (((String)payload.get(required)).isBlank()) throw new IllegalArgumentException("Empty question field");
+        boolean photo = false, canvas = false;
+        for (String name : List.of("questionPhoto","answerPhoto")) {
+          Object valuePhoto = payload.containsKey(name) ? payload.get(name) : "";
+          if (!(valuePhoto instanceof String encoded) || encoded.length() > 4*1024*1024)
+            throw new IllegalArgumentException("Invalid photo");
+          if (!encoded.isEmpty()) {
+            byte[] image=Base64.getDecoder().decode(encoded);
+            if (image.length<8 || !((image[0]&255)==137 && image[1]==80 && image[2]==78 && image[3]==71) &&
+                !((image[0]&255)==255 && (image[1]&255)==216)) throw new IllegalArgumentException("Invalid photo signature");
+            if (name.equals("questionPhoto")) photo=true;
+          }
+        }
+        if (payload.containsKey("canvas")) {
+          if (!(payload.get("canvas") instanceof String ink) || ink.length()>8*1024*1024)
+            throw new IllegalArgumentException("Invalid canvas size");
+          if (!ink.isEmpty()) {
+            if (!(Json.parse(ink) instanceof Map<?,?> doc) || !Long.valueOf(1).equals(doc.get("version")) ||
+                !(doc.get("elements") instanceof List<?> actions) || actions.size()>3000 || !(doc.get("ruled") instanceof Boolean))
+              throw new IllegalArgumentException("Invalid canvas document");
+            canvas=!actions.isEmpty();
+          }
+        }
+        if (((String)payload.get("prompt")).isBlank() && !photo && !canvas)
+          throw new IllegalArgumentException("Empty question content");
         for (var field : Map.of("notebookId",40,"notebookTitle",80,"questionNumber",10).entrySet())
           if (payload.containsKey(field.getKey()) && (!(payload.get(field.getKey()) instanceof String text) || text.length()>field.getValue()))
             throw new IllegalArgumentException("Invalid notebook field");
@@ -171,9 +195,17 @@ public final class BlueNoteServer {
       int start=position;
       if(c=='-')position++;
       while(position<input.length()&&Character.isDigit(input.charAt(position)))position++;
+      if(position<input.length()&&input.charAt(position)=='.') {position++;while(position<input.length()&&Character.isDigit(input.charAt(position)))position++;}
+      if(position<input.length()&&(input.charAt(position)=='e'||input.charAt(position)=='E')) {
+        position++;if(position<input.length()&&(input.charAt(position)=='+'||input.charAt(position)=='-'))position++;
+        while(position<input.length()&&Character.isDigit(input.charAt(position)))position++;
+      }
       String number=input.substring(start,position);
-      if(!number.matches("-?(0|[1-9][0-9]*)"))throw new IllegalArgumentException("Only integer JSON numbers supported");
-      try{return Long.parseLong(number);}catch(NumberFormatException e){throw new IllegalArgumentException("Invalid number");}
+      if(!number.matches("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?"))throw new IllegalArgumentException("Invalid number");
+      try{
+        if(number.indexOf('.')<0&&number.indexOf('e')<0&&number.indexOf('E')<0)return Long.parseLong(number);
+        double parsed=Double.parseDouble(number);if(!Double.isFinite(parsed))throw new IllegalArgumentException("Non-finite number");return parsed;
+      }catch(NumberFormatException e){throw new IllegalArgumentException("Invalid number");}
     }
     String string(){
       require('"');StringBuilder out=new StringBuilder();

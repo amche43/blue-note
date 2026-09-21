@@ -5,6 +5,7 @@ import 'questions.dart';
 import 'store.dart';
 import 'notebooks.dart';
 import 'photo_import.dart';
+import 'question_photos.dart';
 import 'entry_history.dart';
 import 'editor_draft.dart';
 import 'package:flutter/foundation.dart';
@@ -368,7 +369,8 @@ class _QuestionEditorState extends State<QuestionEditor> {
                               ),
                             );
                             if (result == null || !mounted) return;
-                            if (fields['prompt']!.text.trim().isNotEmpty &&
+                            if ((fields['prompt']!.text.trim().isNotEmpty ||
+                                    fields['questionPhoto']!.text.isNotEmpty) &&
                                 !await confirm(
                                   '替换现有题干？',
                                   '识别草稿将替换当前题干，请确认。',
@@ -380,6 +382,12 @@ class _QuestionEditorState extends State<QuestionEditor> {
                               setState(() {
                                 fields['prompt']!.text =
                                     result['text'] as String;
+                                fields['questionPhoto']!.text =
+                                    result['photo'] as String? ?? '';
+                                if (fields['title']!.text.trim().isEmpty) {
+                                  fields['title']!.text =
+                                      result['title'] as String? ?? '';
+                                }
                                 capture = result['capture'] as Json;
                                 changed = true;
                               });
@@ -390,16 +398,26 @@ class _QuestionEditorState extends State<QuestionEditor> {
                   ),
                   field(
                     'title',
-                    knowledge ? '知识点名称 / 正面提示' : '题目名称',
-                    required: true,
+                    knowledge ? '知识点名称 / 正面提示' : '题目名称（可留空）',
                     hint: '例如：一道没想到对称换元的积分题',
                   ),
+                  if (fields['questionPhoto']!.text.isNotEmpty) ...[
+                    QuestionPhoto(fields['questionPhoto']!.text),
+                    TextButton(
+                      onPressed: busy
+                          ? null
+                          : () => setState(() {
+                              fields['questionPhoto']!.clear();
+                              changed = true;
+                            }),
+                      child: const Text('移除题目照片'),
+                    ),
+                  ],
                   field('subject', '科目', required: true),
                   field('chapter', '章节（可选）'),
                   field(
                     'prompt',
                     knowledge ? '需要记住的内容（展开后显示）' : '完整题干',
-                    required: true,
                     lines: 4,
                     hint: '写清已知条件和要求，也可以粘贴已识别的文字',
                   ),
@@ -407,6 +425,63 @@ class _QuestionEditorState extends State<QuestionEditor> {
                     title: Text(knowledge ? '公式与解释（可稍后补充）' : '公式与解答（可稍后补充）'),
                     initiallyExpanded: true,
                     children: [
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.add_photo_alternate_outlined),
+                        label: const Text('添加 / 识别答案照片'),
+                        onPressed: busy
+                            ? null
+                            : () async {
+                                final result = await Navigator.push<Json>(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => PhotoImportPage(
+                                      store: widget.store,
+                                      answer: true,
+                                    ),
+                                  ),
+                                );
+                                if (result == null || !mounted) return;
+                                if ((fields['answer']!.text.isNotEmpty ||
+                                        fields['answerPhoto']!
+                                            .text
+                                            .isNotEmpty) &&
+                                    !await confirm(
+                                      '替换现有答案？',
+                                      '新的答案照片或识别正文将替换当前答案。',
+                                      '替换',
+                                    )) {
+                                  return;
+                                }
+                                if (!mounted) return;
+                                setState(() {
+                                  fields['answer']!.text =
+                                      result['text'] as String;
+                                  fields['answerPhoto']!.text =
+                                      result['photo'] as String? ?? '';
+                                  changed = true;
+                                  capture = {
+                                    ...?capture,
+                                    'answer_capture': result['capture'],
+                                  };
+                                  draft.schedule();
+                                });
+                              },
+                      ),
+                      if (fields['answerPhoto']!.text.isNotEmpty) ...[
+                        QuestionPhoto(
+                          fields['answerPhoto']!.text,
+                          label: '答案照片',
+                        ),
+                        TextButton(
+                          onPressed: busy
+                              ? null
+                              : () => setState(() {
+                                  fields['answerPhoto']!.clear();
+                                  changed = true;
+                                }),
+                          child: const Text('移除答案照片'),
+                        ),
+                      ],
                       field('formula', '公式（LaTeX，可选）', lines: 2),
                       field(
                         'answer',

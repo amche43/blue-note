@@ -218,6 +218,9 @@ void main() {
       expect(find.text('初次记录'),findsOneWidget);
       Navigator.of(tester.element(find.text('开放学习履历'))).pop();
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('未分章'));
+      await tester.tap(find.text('未分章'));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('泰勒展开中的阶数选择'));
       await tester.tap(find.text('泰勒展开中的阶数选择'));
       await tester.pumpAndSettle();

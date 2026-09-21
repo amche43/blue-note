@@ -274,9 +274,7 @@ class _LearningProfilePageState extends State<LearningProfilePage> {
                           const SizedBox(height: 4),
                           Text(
                             value == null
-                                ? (local
-                                      ? '在公开履历查看'
-                                      : '暂无可核实数据')
+                                ? (local ? '在公开履历查看' : '暂无可核实数据')
                                 : '$value / $next ${a.unit}',
                             style: const TextStyle(
                               fontSize: 11,

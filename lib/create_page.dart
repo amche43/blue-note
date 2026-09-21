@@ -1,3 +1,4 @@
+import 'ink_page.dart';
 import 'package:flutter/material.dart';
 import 'brand.dart';
 import 'domain.dart';
@@ -93,6 +94,15 @@ class CreatePage extends StatelessWidget {
           style: TextStyle(color: Colors.blueGrey),
         ),
         const SizedBox(height: 24),
+        action(
+          Icons.draw_outlined,
+          '新建手写画布',
+          '写字、照片、表格和可点开的思路标记',
+          () => Navigator.push<String>(
+            context,
+            MaterialPageRoute(builder: (_) => InkPage(store: store)),
+          ),
+        ),
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -145,7 +155,7 @@ class CreatePage extends StatelessWidget {
           builder: (context, _) => action(
             Icons.drafts_outlined,
             '我的草稿箱',
-            '${store.settings.keys.where((k)=>k.startsWith('editDraft:')).length} 份待整理 · 继续上次的思考',
+            '${store.settings.keys.where((k) => k.startsWith('editDraft:')).length} 份待整理 · 继续上次的思考',
             () => Navigator.push<void>(
               context,
               MaterialPageRoute(builder: (_) => DraftsPage(store: store)),

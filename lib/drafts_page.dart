@@ -1,3 +1,4 @@
+import 'ink_page.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'swipe_delete.dart';
@@ -109,7 +110,15 @@ class _DraftsPageState extends State<DraftsPage> {
       if (draft.data == null) throw const FormatException('这份草稿暂时无法读取，未修改原记录。');
       final suffix = draft.key.substring('editDraft:'.length);
       Widget page;
-      if (suffix == 'composer-question' || suffix == 'composer-knowledge') {
+      if (suffix.startsWith('canvas-')) {
+        page = InkPage(
+          store: widget.store,
+          id: draft.data!['id'] as String?,
+          initial: draft.fields,
+          draftKey: draft.key,
+        );
+      } else if (suffix == 'composer-question' ||
+          suffix == 'composer-knowledge') {
         page = EntryComposer(
           store: widget.store,
           initialKind: suffix.substring('composer-'.length),
