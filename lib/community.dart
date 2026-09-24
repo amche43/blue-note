@@ -320,7 +320,7 @@ class _CommunityPageState extends State<CommunityPage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, update) => AlertDialog(
-          title: const Text('发布我的题目 / 知识卡片'),
+          title: const Text('发布我的知识页'),
           content: SizedBox(
             width: 460,
             child: SingleChildScrollView(
@@ -449,6 +449,13 @@ class _CommunityPageState extends State<CommunityPage> {
         'requestId': revisions.last.id,
         'question': widget.store.questions[chosen],
       });
+      await widget.store.setting(
+        'publication:$chosen',
+        jsonEncode({
+          'revision': revisions.last.id,
+          'at': DateTime.now().millisecondsSinceEpoch,
+        }),
+      );
     });
     if (mounted && error.isEmpty) await reload();
   }
@@ -582,7 +589,7 @@ class _CommunityPageState extends State<CommunityPage> {
           FilledButton.icon(
             onPressed: busy || account == null ? null : publish,
             icon: const Icon(Icons.add),
-            label: const Text('发布我的题目 / 知识卡片'),
+            label: const Text('发布我的知识页'),
           ),
           if (!busy && questions.isEmpty)
             const Padding(

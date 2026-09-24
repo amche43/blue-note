@@ -1,9 +1,11 @@
+import 'notebook_actions.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'domain.dart';
 import 'store.dart';
 import 'ink_page.dart';
 import 'swipe_delete.dart';
+import 'notebook_ui.dart';
 
 String chapterName(Json q) => (q['chapter'] as String? ?? '').trim().isEmpty
     ? '未分章'
@@ -11,12 +13,16 @@ String chapterName(Json q) => (q['chapter'] as String? ?? '').trim().isEmpty
 List<String> notebookChapters(StudyStore store, String book) {
   final raw = store.settings['notebook:$book'];
   final stored = raw == null ? null : (jsonDecode(raw) as Json)['chapters'];
-  return {
-    if (stored is List) ...stored.whereType<String>(),
-    ...store.questions.values
-        .where((q) => q['notebookId'] == book && q['deleted'] == false)
-        .map(chapterName),
-  }.toList();
+  return orderedIds(
+    store,
+    'chapters:$book',
+    {
+      if (stored is List) ...stored.whereType<String>(),
+      ...store.questions.values
+          .where((q) => q['notebookId'] == book && q['deleted'] == false)
+          .map(chapterName),
+    }.toList(),
+  );
 }
 
 Future<void> createChapter(
@@ -25,33 +31,12 @@ Future<void> createChapter(
   String book,
   String title,
 ) async {
-  final c = TextEditingController();
-  final name = await showDialog<String>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('新建章节'),
-      content: TextField(
-        controller: c,
-        autofocus: true,
-        maxLength: 120,
-        decoration: const InputDecoration(hintText: '例如：第一章 极限与连续'),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: () {
-            if (c.text.trim().isNotEmpty) Navigator.pop(ctx, c.text.trim());
-          },
-          child: const Text('创建'),
-        ),
-      ],
-    ),
-  );
-  Future<void>.delayed(const Duration(milliseconds: 350), c.dispose);
-  if (name == null) return;
+  final existing = notebookChapters(store, book);
+  var number = 1;
+  while (existing.contains('新建章节$number')) {
+    number++;
+  }
+  final name = '新建章节$number';
   try {
     final raw = store.settings['notebook:$book'];
     final meta = raw == null
@@ -66,6 +51,18 @@ Future<void> createChapter(
         'chapters': {...chapters, name}.toList(),
       }),
     );
+    if (context.mounted) {
+      final renamed = await requestItemName(context, name);
+      if (renamed != null && !chapters.contains(renamed)) {
+        await store.setting(
+          'notebook:$book',
+          jsonEncode({
+            ...meta,
+            'chapters': [...chapters, renamed],
+          }),
+        );
+      }
+    }
   } catch (e) {
     if (context.mounted) {
       ScaffoldMessenger.of(
@@ -93,9 +90,13 @@ class ChapterPage extends StatefulWidget {
 
 class _ChapterPageState extends State<ChapterPage> {
   String query = '';
+  late String currentChapter;
+  late TextEditingController chapterTitle;
   @override
   void initState() {
     super.initState();
+    currentChapter = widget.chapter;
+    chapterTitle = TextEditingController(text: currentChapter);
     widget.store.addListener(update);
   }
 
@@ -105,8 +106,81 @@ class _ChapterPageState extends State<ChapterPage> {
 
   @override
   void dispose() {
+    chapterTitle.dispose();
     widget.store.removeListener(update);
     super.dispose();
+  }
+
+  Future<void> rename(String value) async {
+    final name = value.trim();
+    if (name.isEmpty || name == currentChapter) {
+      chapterTitle.text = currentChapter;
+      return;
+    }
+    try {
+      final chapters = notebookChapters(widget.store, widget.book);
+      if (chapters.contains(name)) throw const FormatException('已有同名章节，请换一个名称');
+      final raw = widget.store.settings['notebook:${widget.book}'];
+      final meta = raw == null
+          ? <String, dynamic>{'title': widget.title, 'kind': 'question'}
+          : jsonDecode(raw) as Json;
+      final entries = widget.store.questions.entries
+          .where(
+            (e) =>
+                e.value['deleted'] == false &&
+                e.value['notebookId'] == widget.book &&
+                chapterName(e.value) == currentChapter,
+          )
+          .toList();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await widget.store.merge(
+        [
+          for (final e in entries)
+            StudyEvent(
+              id: newId(),
+              lessonId: e.key,
+              type: 'question',
+              at: widget.store.events
+                  .where((v) => v.lessonId == e.key)
+                  .fold<int>(now, (a, v) => v.at >= a ? v.at + 1 : a),
+              payload: {...e.value, 'chapter': name},
+            ),
+        ],
+        expectedQuestions: {for (final e in entries) e.key: e.value},
+        removeSettings: [
+          'notebook:${widget.book}',
+          'order:chapters:${widget.book}',
+        ],
+        localSettings: {
+          'order:chapters:${widget.book}': jsonEncode(
+            chapters.map((c) => c == currentChapter ? name : c).toList(),
+          ),
+          'notebook:${widget.book}': jsonEncode({
+            ...meta,
+            'chapters': chapters
+                .map((c) => c == currentChapter ? name : c)
+                .toList(),
+          }),
+        },
+      );
+      if (mounted) setState(() => currentChapter = name);
+    } catch (e) {
+      chapterTitle.text = currentChapter;
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('改名未保存：$e')));
+      }
+    }
+  }
+
+  String updated(String id) {
+    final records =
+        widget.store.events
+            .where((e) => e.lessonId == id && e.type == 'question')
+            .toList()
+          ..sort(compareEvents);
+    return records.isEmpty ? '' : notebookUpdated(records.last.at);
   }
 
   Future<void> create() async {
@@ -117,7 +191,7 @@ class _ChapterPageState extends State<ChapterPage> {
           store: widget.store,
           notebookId: widget.book,
           notebookTitle: widget.title,
-          chapter: widget.chapter == '未分章' ? '' : widget.chapter,
+          chapter: currentChapter == '未分章' ? '' : currentChapter,
         ),
       ),
     );
@@ -131,7 +205,7 @@ class _ChapterPageState extends State<ChapterPage> {
               (e) =>
                   e.value['deleted'] == false &&
                   e.value['notebookId'] == widget.book &&
-                  chapterName(e.value) == widget.chapter &&
+                  chapterName(e.value) == currentChapter &&
                   (e.value['title'] as String).toLowerCase().contains(
                     query.toLowerCase(),
                   ),
@@ -143,13 +217,56 @@ class _ChapterPageState extends State<ChapterPage> {
                   int.tryParse(b.value['questionNumber'] as String) ?? 0,
                 ),
           );
+    final order = orderedIds(
+      widget.store,
+      'pages:${widget.book}',
+      entries.map((e) => e.key),
+    );
+    entries.sort(
+      (a, b) => order.indexOf(a.key).compareTo(order.indexOf(b.key)),
+    );
     return Scaffold(
-      backgroundColor: const Color(0xfff8fbff),
-      appBar: AppBar(title: Text(widget.chapter)),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: create,
-        icon: const Icon(Icons.draw_outlined),
-        label: const Text('新题目'),
+      backgroundColor: notebookPaper,
+      appBar: AppBar(
+        backgroundColor: notebookPaper,
+        actions: [NotebookAddButton(onPressed: create, tooltip: '新建知识页')],
+        title: Row(
+          children: [
+            NotebookCover(
+              number:
+                  '${notebookChapters(widget.store, widget.book).indexOf(currentChapter) + 1}'
+                      .padLeft(2, '0'),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                key: const ValueKey('chapter-title'),
+                controller: chapterTitle,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: notebookInk,
+                ),
+                maxLength: 120,
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  filled: false,
+                  contentPadding: EdgeInsets.zero,
+                  counterText: '',
+                  hintText: '章节名称',
+                ),
+                textInputAction: TextInputAction.done,
+                onSubmitted: rename,
+                onTapOutside: (_) {
+                  FocusScope.of(context).unfocus();
+                  rename(chapterTitle.text);
+                },
+              ),
+            ),
+          ],
+        ),
       ),
       body: Center(
         child: ConstrainedBox(
@@ -158,7 +275,7 @@ class _ChapterPageState extends State<ChapterPage> {
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
             children: [
               Text(
-                widget.title,
+                '${widget.title} · 第 ${notebookChapters(widget.store, widget.book).indexOf(currentChapter) + 1} 章',
                 style: const TextStyle(color: Colors.blueGrey),
               ),
               const SizedBox(height: 16),
@@ -166,7 +283,7 @@ class _ChapterPageState extends State<ChapterPage> {
                 onChanged: (v) => setState(() => query = v),
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.search),
-                  hintText: '查找这一章的题目',
+                  hintText: '搜索页面名称',
                 ),
               ),
               const SizedBox(height: 16),
@@ -181,68 +298,100 @@ class _ChapterPageState extends State<ChapterPage> {
                         color: Color(0xff2878f0),
                       ),
                       const SizedBox(height: 16),
-                      Text(query.isEmpty ? '这一章还没有题目，从一页画布开始吧。' : '没有匹配的题目'),
-                      TextButton(onPressed: create, child: const Text('创建题目')),
+                      Text(
+                        query.isEmpty ? '这一章还没有知识页，点击右上角 + 开始记录。' : '没有匹配的知识页',
+                      ),
+                      TextButton(onPressed: create, child: const Text('新建知识页')),
                     ],
                   ),
                 ),
-              for (final e in entries)
-                SwipeDelete(
-                  key: ValueKey(e.key),
-                  onDelete: () async {
-                    final yes = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('删除这道题？'),
-                        content: Text(e.value['title'] as String),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('取消'),
-                          ),
-                          FilledButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('确认删除'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (yes == true) {
-                      try {
-                        await widget.store.deleteQuestion(e.key);
-                      } catch (_) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('删除未完成，请重试')),
-                          );
-                        }
-                      }
-                    }
-                  },
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      vertical: 8,
-                      horizontal: 4,
-                    ),
-                    leading: CircleAvatar(
-                      backgroundColor: const Color(0xffe9f2ff),
-                      child: Text(e.value['questionNumber'] as String),
-                    ),
-                    title: Text(e.value['title'] as String),
-                    subtitle: Text(
-                      (e.value['canvas'] as String? ?? '').isEmpty
-                          ? '题目与学习记录'
-                          : '手写画布 · 可继续编辑',
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.push<String>(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => InkPage(store: widget.store, id: e.key),
-                      ),
-                    ),
-                  ),
+              NotebookReorderList(
+                onReorder: (a, b) => reorderItems(
+                  widget.store,
+                  'pages:${widget.book}',
+                  order,
+                  a,
+                  b,
                 ),
+                children: [
+                  for (final e in entries)
+                    SwipeDelete(
+                      key: ValueKey(e.key),
+                      onUpload: () =>
+                          uploadEntries(context, widget.store, [e.key]),
+                      onDelete: () async {
+                        final yes = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('删除这个知识页？'),
+                            content: Text(e.value['title'] as String),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('取消'),
+                              ),
+                              FilledButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('确认删除'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (yes == true) {
+                          try {
+                            await widget.store.deleteQuestion(e.key);
+                          } catch (_) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('删除未完成，请重试')),
+                              );
+                            }
+                          }
+                        }
+                      },
+                      child: NotebookCard(
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 16,
+                            horizontal: 14,
+                          ),
+                          leading: NotebookCover(
+                            kind: NoteIconKind.page,
+                            index: entries.indexOf(e),
+                            state: entryIconState(widget.store, e.key),
+                            contentIcon: pageContentIcon(e.value),
+                          ),
+                          title: Text(
+                            e.value['title'] as String,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: notebookInk,
+                            ),
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              widget.store.settings.containsKey(
+                                    'publication:${e.key}',
+                                  )
+                                  ? '${updated(e.key)} · 有已发布版本'
+                                  : '${updated(e.key)} · 仅我可见',
+                              style: const TextStyle(color: Colors.blueGrey),
+                            ),
+                          ),
+                          onTap: () => Navigator.push<String>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  InkPage(store: widget.store, id: e.key),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ],
           ),
         ),

@@ -64,23 +64,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('我的').last);
     await tester.pumpAndSettle();
-    for (final label in ['学习本', '知识卡片', '题目', '复习记录']) {
-      await tester.tap(find.text(label).first);
-      await tester.pumpAndSettle();
-      expect(
-        find.text(
-          {
-            '学习本': '我的学习本',
-            '知识卡片': '我的知识卡片',
-            '题目': '我的题目',
-            '复习记录': '共 0 条记录',
-          }[label]!,
-        ),
-        findsOneWidget,
-      );
-      await tester.tap(find.byType(BackButton));
-      await tester.pumpAndSettle();
-    }
+    expect(find.text('知识卡片'), findsNothing);
+    expect(find.text('我的学习成果'), findsNothing);
+    expect(find.text('我的学习本'), findsNothing);
     await tester.scrollUntilVisible(
       find.text('设置'),
       250,

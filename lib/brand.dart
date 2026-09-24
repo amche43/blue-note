@@ -50,28 +50,14 @@ class SceneMascot extends StatelessWidget {
   final double width;
   const SceneMascot(this.scene, {super.key, this.width = 150});
   @override
-  Widget build(BuildContext context) => Image.asset(
-    'assets/brand/mascot-${scene.name}.png',
-    width: width,
-    height: width,
-    fit: BoxFit.contain,
-    excludeFromSemantics: true,
-    cacheWidth: (width * MediaQuery.devicePixelRatioOf(context)).round(),
-  );
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 class BlueMascot extends StatelessWidget {
   final double width;
   const BlueMascot({super.key, this.width = 100});
   @override
-  Widget build(BuildContext context) => Image.asset(
-    'assets/brand/mascot-transparent.png',
-    width: width,
-    height: width * 1.2,
-    fit: BoxFit.contain,
-    filterQuality: FilterQuality.high,
-    excludeFromSemantics: true,
-  );
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 final _avatarMemory = <String, Uint8List>{};
@@ -102,17 +88,12 @@ class BlueAvatar extends StatelessWidget {
               errorBuilder: (_, error, stack) =>
                   BlueAvatar(index: index, width: width),
             )
-          : FittedBox(
-              fit: BoxFit.cover,
-              child: BrandCrop(
-                sheet: 'avatars',
-                region: Rect.fromLTWH(
-                  33 + (index % 8) * 174,
-                  index >= 8 ? 558 : 312,
-                  162,
-                  191,
-                ),
-                width: width,
+          : ColoredBox(
+              color: Colors.primaries[index % Colors.primaries.length].shade50,
+              child: Icon(
+                Icons.person_outline_rounded,
+                size: width * .65,
+                color: Colors.primaries[index % Colors.primaries.length],
               ),
             ),
     ),
@@ -172,38 +153,29 @@ class BlueSticker extends StatelessWidget {
   final double width;
   const BlueSticker(this.index, {super.key, this.width = 72});
   @override
-  Widget build(BuildContext context) => BrandCrop(
-    sheet: 'stickers',
-    region: index < 10
-        ? Rect.fromLTWH(31 + index * 137, 365, 130, 126)
-        : Rect.fromLTWH(
-            34 + ((index - 10) % 5) * 142,
-            index < 15 ? 588 : 738,
-            137,
-            126,
-          ),
-    width: width,
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: width,
+    child: Center(
+      child: Text(
+        const [
+          '🙂',
+          '👍',
+          '💪',
+          '❓',
+          '🤔',
+          '😮',
+          '🥺',
+          '😶',
+          '💤',
+          '🎉',
+        ][index % 10],
+        style: TextStyle(fontSize: width * .55),
+      ),
+    ),
   );
 }
 
-const avatarNames = [
-  '蓝笔',
-  '笔记本',
-  '橡皮擦',
-  '小尺',
-  '圆珠笔',
-  '荧光笔',
-  '回形针',
-  '便利贴',
-  '闪光蓝笔',
-  '音乐蓝笔',
-  '阅读蓝笔',
-  '毕业蓝笔',
-  '爱心笔记本',
-  '思考橡皮',
-  '博学小尺',
-  '猫咪便利贴',
-];
+const avatarNames = ['珊瑚', '玫瑰', '紫罗兰', '靛蓝', '海蓝', '晴空', '湖水', '青绿'];
 Future<int?> chooseBlueAvatar(BuildContext context, int selected) =>
     showModalBottomSheet<int>(
       context: context,

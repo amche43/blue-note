@@ -1,7 +1,7 @@
 name: blue_note
 description: 从例题出发，记住下一次解题的关键一步。
 publish_to: none
-version: 0.22.0+22
+version: 0.25.0+25
 environment:
   sdk: '>=3.10.0 <4.0.0'
 dependencies:
@@ -21,4 +21,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/lessons.json
-    - assets/brand/
+    - assets/brand/launcher.png
+    - assets/brand/ui-reference.png

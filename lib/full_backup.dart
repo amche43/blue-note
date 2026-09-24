@@ -6,6 +6,7 @@ import 'learning_fields.dart';
 const fullBackupLimit = 64 * 1024 * 1024;
 bool portableSetting(String key) =>
     key.startsWith('notebook:') ||
+    key.startsWith('order:') ||
     key.startsWith('favorite:') ||
     key.startsWith('fork:') ||
     key.startsWith('adoption:') ||
@@ -95,6 +96,13 @@ class FullBackup {
             throw const FormatException('派生条目无效');
           }
           validateQuestion(p['question'] as Json);
+        }
+      } else if (e.key.startsWith('order:')) {
+        final ids = jsonDecode(e.value);
+        if (ids is! List ||
+            ids.length > 20000 ||
+            ids.any((v) => v is! String || v.length > 300)) {
+          throw const FormatException('排序数据无效');
         }
       } else if (e.key.startsWith('notebook:')) {
         final b = jsonDecode(e.value);

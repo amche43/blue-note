@@ -78,7 +78,7 @@ void main() {
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('blue_note/photo'),
         (_) async => (await rootBundle.load(
-          'assets/brand/app-icon.png',
+          'assets/brand/launcher.png',
         )).buffer.asUint8List(),
       );
       addTearDown(

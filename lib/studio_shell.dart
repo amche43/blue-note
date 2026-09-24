@@ -1,7 +1,7 @@
+import 'notebook_actions.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'daily_greeting.dart';
-import 'my_entries_page.dart';
 import 'swipe_delete.dart';
 import 'package:flutter/material.dart';
 import 'brand.dart';
@@ -14,7 +14,7 @@ import 'domain.dart';
 import 'hall.dart';
 import 'notebooks.dart';
 import 'store.dart';
-import 'create_page.dart';
+import 'notebook_ui.dart';
 import 'learning_profile_page.dart';
 
 const studioBlue = Color(0xff2878f0);
@@ -43,6 +43,11 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     scheduleGreeting();
+    widget.store.addListener(refreshBooks);
+  }
+
+  void refreshBooks() {
+    if (mounted) setState(() {});
   }
 
   void scheduleGreeting() {
@@ -70,6 +75,7 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     midnight?.cancel();
+    widget.store.removeListener(refreshBooks);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -91,100 +97,26 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
     ),
   );
   Future<void> addBook() async {
-    final name = TextEditingController();
-    String kind = 'question';
-    String error = '';
-    bool saving = false;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, update) => SingleChildScrollView(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              24,
-              0,
-              24,
-              MediaQuery.viewInsetsOf(ctx).bottom + 24,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '创建学习本',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
-                ),
-                const Text('先为自己的学习留一个位置。'),
-                const SizedBox(height: 20),
-                TextField(
-                  controller: name,
-                  maxLength: 80,
-                  enabled: !saving,
-                  decoration: const InputDecoration(
-                    labelText: '学习本名称',
-                    hintText: '例如：高数极限错题本',
-                  ),
-                ),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'question', label: Text('错题本')),
-                    ButtonSegment(value: 'knowledge', label: Text('知识本')),
-                  ],
-                  selected: {kind},
-                  onSelectionChanged: saving
-                      ? null
-                      : (v) => update(() => kind = v.first),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  '仅自己可见。内容整理好后再选择分享。',
-                  style: TextStyle(fontSize: 12, color: Colors.blueGrey),
-                ),
-                if (error.isNotEmpty) Text(error),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: saving
-                      ? null
-                      : () async {
-                          if (name.text.trim().isEmpty) {
-                            update(() => error = '请给学习本取个名字');
-                            return;
-                          }
-                          update(() => saving = true);
-                          try {
-                            final id = 'book-${newId()}';
-                            await store.setting(
-                              'notebook:$id',
-                              jsonEncode({
-                                'title': name.text.trim(),
-                                'kind': kind,
-                              }),
-                            );
-                            if (ctx.mounted) Navigator.pop(ctx);
-                            if (mounted) {
-                              setState(() {});
-                              books(kind == 'knowledge', id);
-                            }
-                          } catch (_) {
-                            if (ctx.mounted) {
-                              update(() {
-                                saving = false;
-                                error = '未保存，请重试';
-                              });
-                            }
-                          }
-                        },
-                  child: Text(saving ? '正在创建…' : '创建并打开'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    final names = notebooks(store).values.toSet();
+    var n = 1;
+    while (names.contains('新建笔记本$n')) {
+      n++;
+    }
+    final id = 'book-${newId()}';
+    await store.setting(
+      'notebook:$id',
+      jsonEncode({'title': '新建笔记本$n', 'kind': 'question'}),
     );
-    Future<void>.delayed(const Duration(milliseconds: 350), name.dispose);
+    if (mounted) {
+      final name = await requestItemName(context, '新建笔记本$n');
+      if (name != null) {
+        await store.setting(
+          'notebook:$id',
+          jsonEncode({'title': name, 'kind': 'question'}),
+        );
+      }
+      if (mounted) books(false, id);
+    }
   }
 
   bool refreshingProfile = false;
@@ -421,21 +353,6 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
     ),
   );
   List<Widget> home() {
-    final ordered = [...store.events]..sort(compareEvents);
-    final recent =
-        store.lessons
-            .where((l) => l.id == store.settings['lastOpenedLesson'])
-            .firstOrNull ??
-        ordered.reversed
-            .map(
-              (e) => store.lessons.where((l) => l.id == e.lessonId).firstOrNull,
-            )
-            .whereType<Lesson>()
-            .firstOrNull;
-    final next = recent ?? store.due.firstOrNull ?? store.lessons.first;
-    final today = dayKey(DateTime.now());
-    final daily = contributions(store.events)[today] ?? [];
-    final allBooks = notebooks(store);
     return [
       Row(
         children: [
@@ -449,216 +366,55 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
               ),
             ),
           ),
-          IconButton(
-            tooltip: '查看通知',
-            onPressed: () => setState(() => tab = 3),
-            icon: const Icon(Icons.notifications_none),
-          ),
+          NotebookAddButton(onPressed: addBook, tooltip: '新建笔记本'),
         ],
       ),
       const SizedBox(height: 14),
-      search(widget.library),
-      section('继续学习'),
-      Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: const Color(0xffeff6ff),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            SubjectArt(next.subject),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    next.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    recent == null ? '从一条例题开始' : '上次学习 · ${next.subject}',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: Colors.blueGrey,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            SizedBox(
-              width: 76,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(76, 34),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-                onPressed: () => widget.open(next),
-                child: const Text('继续学习 ›', style: TextStyle(fontSize: 10)),
-              ),
-            ),
-          ],
-        ),
-      ),
       section('我的学习本', more: () => books()),
-      SizedBox(
-        height: 88,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          children: [
-            ...allBooks.entries.map((b) {
-              final count = store.questions.values
-                  .where(
-                    (q) => q['notebookId'] == b.key && q['deleted'] == false,
-                  )
-                  .length;
-              return InkWell(
-                onTap: () => books(isKnowledgeBook(store, b.key), b.key),
-                child: Container(
-                  width: 96,
-                  margin: const EdgeInsets.only(right: 9),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: isKnowledgeBook(store, b.key)
-                          ? [const Color(0xffe8f9f5), const Color(0xffd9f1fb)]
-                          : [const Color(0xffecf3ff), const Color(0xffe2eaff)],
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        b.value,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        '$count 条内容',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.blueGrey,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }),
-            InkWell(
-              onTap: addBook,
-              child: Container(
-                width: 70,
-                decoration: BoxDecoration(
-                  color: const Color(0xffedf4ff),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.add, color: studioBlue),
-                    Text(
-                      '新建',
-                      style: TextStyle(fontSize: 12, color: studioBlue),
-                    ),
-                  ],
+      if (notebooks(store).isEmpty)
+        ListTile(
+          leading: const Icon(Icons.auto_stories_outlined, color: studioBlue),
+          title: const Text('为知识留一个位置'),
+          subtitle: const Text('进入我的学习本，开始第一本笔记'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => books(),
+        ),
+      NotebookReorderList(
+        onReorder: (a, b) =>
+            reorderItems(store, 'books', notebooks(store).keys.toList(), a, b),
+        children: [
+          for (final b in notebooks(store).entries)
+            SwipeDelete(
+              key: ValueKey(b.key),
+              onDelete: () async {
+                await confirmDeleteNotebook(context, store, b.key);
+                if (mounted) setState(() {});
+              },
+              onUpload: () => uploadEntries(
+                context,
+                store,
+                store.questions.entries
+                    .where((e) => e.value['notebookId'] == b.key)
+                    .map((e) => e.key)
+                    .toList(),
+              ),
+              child: NotebookCard(
+                child: ListTile(
+                  leading: NotebookCover(state: bookIconState(store, b.key)),
+                  title: Text(b.value),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => books(false, b.key),
                 ),
               ),
             ),
-          ],
-        ),
-      ),
-      section('今日学习'),
-      Row(
-        children: [
-          stat('${daily.where((e) => e.type == 'question').length}', '整理记录'),
-          stat('${daily.where((e) => e.type == 'attempt').length}', '完成复习'),
-          stat('${daily.where((e) => e.type == 'note').length}', '写下笔记'),
         ],
       ),
       const SizedBox(height: 24),
       ContributionCalendar(store: store),
-      section('快捷创建'),
-      Row(
-        children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: addBook,
-              icon: const Icon(Icons.library_add_outlined, size: 16),
-              label: const Text('建学习本', style: TextStyle(fontSize: 11)),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: widget.record,
-              icon: const Icon(Icons.edit_outlined, size: 16),
-              label: const Text('记录内容', style: TextStyle(fontSize: 11)),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: OutlinedButton(
-              onPressed: widget.practice,
-              child: const Text('复习中心', style: TextStyle(fontSize: 11)),
-            ),
-          ),
-        ],
-      ),
-      section('最近更新', more: widget.library),
-      if (ordered.isEmpty)
-        const Text(
-          '记录第一条内容后，更新会出现在这里。',
-          style: TextStyle(fontSize: 12, color: Colors.blueGrey),
-        ),
-      ...ordered.reversed.take(3).map((e) {
-        final lesson = store.lessons
-            .where((l) => l.id == e.lessonId)
-            .firstOrNull;
-        return ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(
-            Icons.auto_stories_outlined,
-            color: studioBlue,
-            size: 20,
-          ),
-          title: Text(
-            lesson?.title ?? '已移除的条目',
-            style: const TextStyle(fontSize: 12),
-          ),
-          subtitle: Text(
-            '${dayKey(DateTime.fromMillisecondsSinceEpoch(e.at))} · ${e.type == 'question'
-                ? '整理内容'
-                : e.type == 'note'
-                ? '更新笔记'
-                : '完成复习'}',
-            style: const TextStyle(fontSize: 10),
-          ),
-          onTap: lesson == null ? null : () => widget.open(lesson),
-        );
-      }),
-      TextButton(onPressed: widget.library, child: const Text('学习')),
     ];
   }
 
   List<Widget> profile() {
-    final entries = store.questions.values
-        .where((q) => q['deleted'] == false)
-        .toList();
     return [
       LayoutBuilder(
         builder: (_, c) => Stack(
@@ -717,51 +473,6 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
         style: TextStyle(fontSize: 12, color: Colors.blueGrey),
       ),
       const SizedBox(height: 20),
-      Row(
-        children: [
-          stat('${notebooks(store).length}', '学习本', onTap: () => books()),
-          stat(
-            '${entries.where((q) => q['contentKind'] == 'knowledge').length}',
-            '知识卡片',
-            onTap: () => Navigator.push<void>(
-              context,
-              MaterialPageRoute(
-                builder: (_) => MyEntriesPage(
-                  store: store,
-                  knowledge: true,
-                  open: widget.open,
-                ),
-              ),
-            ),
-          ),
-          stat(
-            '${entries.where((q) => q['contentKind'] != 'knowledge').length}',
-            '题目',
-            onTap: () => Navigator.push<void>(
-              context,
-              MaterialPageRoute(
-                builder: (_) => MyEntriesPage(
-                  store: store,
-                  knowledge: false,
-                  open: widget.open,
-                ),
-              ),
-            ),
-          ),
-          stat(
-            '${store.events.where((e) => e.type == 'attempt').length}',
-            '复习记录',
-            onTap: () => Navigator.push<void>(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    ContributionRecordsPage(store: store, onlyReviews: true),
-              ),
-            ),
-          ),
-        ],
-      ),
-      const SizedBox(height: 24),
       ContributionCalendar(store: store),
       ListTile(
         contentPadding: EdgeInsets.zero,
@@ -775,37 +486,6 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
         onTap: () => Navigator.push<void>(
           context,
           MaterialPageRoute(builder: (_) => LearningProfilePage(store: store)),
-        ),
-      ),
-      section('我的学习成果'),
-      Wrap(
-        spacing: 8,
-        children: [
-          ActionChip(label: const Text('我创建的'), onPressed: () => books()),
-          ActionChip(label: const Text('知识点本'), onPressed: () => books(true)),
-          ActionChip(
-            label: const Text('我的收藏'),
-            onPressed: () => setState(() {
-              exploreSaved = true;
-              tab = 1;
-            }),
-          ),
-        ],
-      ),
-      ...notebooks(store).entries.map(
-        (b) => SwipeDelete(
-          key: ValueKey(b.key),
-          onDelete: () async {
-            await confirmDeleteNotebook(context, store, b.key);
-            if (mounted) setState(() {});
-          },
-          child: ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.menu_book, color: studioBlue),
-            title: Text(b.value, style: const TextStyle(fontSize: 14)),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => books(isKnowledgeBook(store, b.key), b.key),
-          ),
         ),
       ),
       const SizedBox(height: 20),
@@ -910,12 +590,6 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
               ? explore()
               : tab == 3
               ? notifications()
-              : tab == 2
-              ? CreatePage(
-                  store: store,
-                  createBook: addBook,
-                  openLesson: widget.open,
-                )
               : ListView(
                   key: ValueKey('studio-$tab'),
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
@@ -933,18 +607,8 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
         ),
         height: 64,
         child: Row(
-          children: List.generate(5, (i) {
-            if (i == 2) {
-              return Expanded(
-                child: Center(
-                  child: IconButton.filled(
-                    tooltip: '添加',
-                    onPressed: () => setState(() => tab = 2),
-                    icon: const Icon(Icons.add, size: 28),
-                  ),
-                ),
-              );
-            }
+          children: List.generate(4, (position) {
+            final i = [0, 1, 3, 4][position];
             return Expanded(
               child: InkWell(
                 onTap: () {
@@ -1026,7 +690,7 @@ class _WelcomePageState extends State<WelcomePage> {
                         ),
                       ),
                       const SizedBox(height: 30),
-                      const BlueMascot(width: 200),
+                      Image.asset('assets/brand/launcher.png', width: 150),
                       const SizedBox(height: 22),
                       const Text(
                         'Blue-note 蓝笔',

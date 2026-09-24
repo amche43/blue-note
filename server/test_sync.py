@@ -64,8 +64,8 @@ def run():
             canvas=dict(question,id='4'*32,payload=dict(fields,prompt='',canvas=ink))
             synced=post([canvas],schema=2)
             assert next(e for e in synced['events'] if e['id']=='4'*32)['payload']['canvas']==ink
-            malformed=dict(question,id='5'*32,payload=dict(fields,prompt='',canvas='{"version":1,"elements":[],"ruled":true}'))
-            try:post([malformed],schema=2);raise AssertionError('Empty canvas accepted')
+            malformed=dict(question,id='5'*32,payload=dict(fields,prompt='',canvas='{"version":9,"elements":[],"ruled":true}'))
+            try:post([malformed],schema=2);raise AssertionError('Invalid canvas version accepted')
             except urllib.error.HTTPError as error:assert error.code==400
             print('PASS: authentication, two-device merge, idempotency, atomic conflicts, restart persistence, v1/v2 migration and custom questions')
         finally:

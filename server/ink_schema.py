@@ -19,12 +19,13 @@ def validate_canvas(raw):
     if not isinstance(value, dict) or value.get('version') != 1 or type(value.get('ruled')) is not bool:
         raise ValueError('画布版本无效')
     number(value.get('height'), 400, 20000)
+    number(value.get('width', 1000), 1000, 20000)
     elements = value.get('elements')
     if not isinstance(elements, list) or len(elements) > 3000:
         raise ValueError('画布动作过多')
     ids = set()
     for e in elements:
-        if not isinstance(e, dict) or e.get('kind') not in ('pen', 'highlight', 'text', 'image', 'rect', 'ellipse', 'line', 'table'):
+        if not isinstance(e, dict) or e.get('kind') not in ('pen', 'highlight', 'annotation', 'text', 'image', 'rect', 'ellipse', 'line', 'table'):
             raise ValueError('画布对象无效')
         for k, size in dict(id=80, text=18000, note=4000, image=4*1024*1024).items():
             if not isinstance(e.get(k), str) or len(e[k]) > size:
@@ -41,7 +42,7 @@ def validate_canvas(raw):
             raise ValueError('画布范围无效')
         for i, v in enumerate(box):
             number(v, -20000 if i < 2 else 0, 20000)
-        if e['kind'] in ('pen', 'highlight') and not points:
+        if e['kind'] in ('pen', 'highlight', 'annotation') and not points:
             raise ValueError('笔迹不能为空')
         for point in points:
             if not isinstance(point, list) or len(point) != 2:

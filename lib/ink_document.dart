@@ -24,7 +24,7 @@ class InkElement {
     this.rows = 3,
     this.columns = 3,
   });
-  bool get ink => kind == 'pen' || kind == 'highlight';
+  bool get ink => kind == 'pen' || kind == 'highlight' || kind == 'annotation';
   Rect get bounds {
     if (!ink) return box;
     if (points.isEmpty) return Rect.zero;
@@ -98,6 +98,7 @@ class InkElement {
     if (![
       'pen',
       'highlight',
+      'annotation',
       'text',
       'image',
       'rect',
@@ -151,22 +152,25 @@ class InkElement {
 
 class InkDocument {
   final List<InkElement> elements;
-  final double height;
+  final double height, width;
   final bool ruled;
   static const double pageWidth = 1000;
   const InkDocument({
     this.elements = const [],
     this.height = 1600,
-    this.ruled = true,
+    this.width = 1000,
+    this.ruled = false,
   });
   InkDocument withElements(List<InkElement> value) => InkDocument(
     elements: List.unmodifiable(value),
     height: height,
+    width: width,
     ruled: ruled,
   );
   String encode() => jsonEncode({
     'version': 1,
     'height': height,
+    'width': width,
     'ruled': ruled,
     'elements': elements.map((e) => e.toJson()).toList(),
   });
@@ -183,6 +187,11 @@ class InkDocument {
         !(j['height'] as num).isFinite ||
         j['height'] < 400 ||
         j['height'] > 20000 ||
+        (j['width'] != null &&
+            (j['width'] is! num ||
+                !(j['width'] as num).isFinite ||
+                j['width'] < 1000 ||
+                j['width'] > 20000)) ||
         j['elements'] is! List ||
         (j['elements'] as List).length > 3000) {
       throw const FormatException('画布格式无效');
@@ -194,6 +203,7 @@ class InkDocument {
     return InkDocument(
       elements: es,
       height: (j['height'] as num).toDouble(),
+      width: (j['width'] as num? ?? 1000).toDouble(),
       ruled: j['ruled'] as bool,
     );
   }
@@ -219,6 +229,7 @@ class InkDocument {
                 ![
                   'pen',
                   'highlight',
+                  'annotation',
                   'rect',
                   'ellipse',
                   'line',
@@ -231,6 +242,7 @@ class InkDocument {
 
   InkDocument insertSpace(double y, double amount) => InkDocument(
     height: math.min(20000, height + amount),
+    width: width,
     ruled: ruled,
     elements: elements
         .map((e) => e.bounds.top >= y ? e.change(move: Offset(0, amount)) : e)

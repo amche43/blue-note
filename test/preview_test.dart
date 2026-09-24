@@ -7,7 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:blue_note/main.dart';
 import 'package:blue_note/store.dart';
-import 'package:blue_note/study_tools.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -33,7 +32,7 @@ void main() {
     final store=(await tester.runAsync(() => StudyStore.open(factory:databaseFactoryFfiNoIsolate,path:inMemoryDatabasePath)))!;
     final key=GlobalKey();
     await tester.pumpWidget(RepaintBoundary(key:key,child:BlueNoteApp(store:store)));
-    await tester.runAsync(()async{for(final asset in ['mascots','avatars','subjects','stickers','ui-reference']){await precacheImage(AssetImage('assets/brand/$asset.png'),key.currentContext!);}});
+    await tester.runAsync(()async{for(final asset in ['launcher','ui-reference']){await precacheImage(AssetImage('assets/brand/$asset.png'),key.currentContext!);}});
     await tester.pumpAndSettle();expect(tester.takeException(),isNull);
     if(Platform.isWindows){
       final boundary=key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
@@ -46,35 +45,13 @@ void main() {
     }
     tester.view.physicalSize=const Size(320,740);
     await tester.pumpAndSettle();expect(tester.takeException(),isNull);
-    await tester.tap(find.text('搜索学习本、知识点、题目…'));await tester.pumpAndSettle();
-    await tester.tap(find.text('添加我的题目'));await tester.pumpAndSettle();
-    expect(tester.takeException(),isNull);
-    tester.view.physicalSize=const Size(390,844);
-    await tester.pumpAndSettle();expect(tester.takeException(),isNull);
-    if(Platform.isWindows){
-      final boundary=key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-      await tester.runAsync(() async {
-        final image=await boundary.toImage(pixelRatio:2);
-        final bytes=await image.toByteData(format:ui.ImageByteFormat.png);
-        await File('../blue-note-question-editor-preview.png').writeAsBytes(bytes!.buffer.asUint8List());
-        image.dispose();
-      });
-    }
-    await store.attempt(store.lessons.first.id, variantId:'preview', rating:'again', assisted:false, correct:false, reason:'条件理解错');
-    await tester.pumpWidget(RepaintBoundary(key:key,child:MaterialApp(debugShowCheckedModeBanner:false,theme:ThemeData(useMaterial3:true, scaffoldBackgroundColor:paper,
-      colorScheme:ColorScheme.fromSeed(seedColor:inkBlue)),home:StudyCenter(store:store,openLesson:(_,_)async{}))));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('待再练'));await tester.pumpAndSettle();
-    expect(tester.takeException(),isNull);
-    if(Platform.isWindows){
-      final boundary=key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-      await tester.runAsync(() async {
-        final image=await boundary.toImage(pixelRatio:2);
-        final bytes=await image.toByteData(format:ui.ImageByteFormat.png);
-        await File('../blue-note-review-center-preview.png').writeAsBytes(bytes!.buffer.asUint8List());
-        image.dispose();
-      });
-    }
+    expect(find.text('继续学习'), findsNothing);
+    expect(find.byTooltip('添加'), findsNothing);
+    expect(find.byTooltip('新建笔记本'), findsOneWidget);
+    expect(find.text('我的草稿箱'), findsNothing);
+    expect(find.text('手动记录题目'), findsNothing);
+    expect(find.text('整理知识卡片'), findsNothing);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());await tester.pumpAndSettle();
     await store.db.close();store.dispose();
   });

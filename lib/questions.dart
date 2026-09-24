@@ -60,8 +60,8 @@ Json validateQuestion(Object? value) {
   for (final k in ['questionPhoto', 'answerPhoto']) {
     validatePhoto(result[k] as String);
   }
-  final canvas = InkDocument.decode(result['canvas'] as String);
-  if (canvas.elements.isEmpty &&
+  InkDocument.decode(result['canvas'] as String);
+  if ((result['canvas'] as String).isEmpty &&
       (result['prompt'] as String).isEmpty &&
       (result['questionPhoto'] as String).isEmpty) {
     throw const FormatException('请填写题干或添加题目照片');

@@ -79,7 +79,7 @@ class InkPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
     if (e.ink) {
       if (e.points.isEmpty) return;
-      if (e.kind == 'highlight') {
+      if ((e.kind == 'highlight' || e.kind == 'annotation')) {
         p.color = Color(e.color).withValues(alpha: .30);
       }
       final path = Path()..moveTo(e.points.first.dx, e.points.first.dy);
@@ -95,7 +95,7 @@ class InkPainter extends CustomPainter {
       } else {
         c.drawPath(path, p);
       }
-      if (e.note.isNotEmpty) {
+      if (e.kind == 'annotation' || e.note.isNotEmpty) {
         final center = e.points.last;
         c.drawCircle(center, 12, Paint()..color = const Color(0xff2878f0));
         c.drawLine(
@@ -207,6 +207,7 @@ class _InkPreviewState extends State<InkPreview> {
   InkDocument document = const InkDocument();
   final transform = TransformationController();
   bool fitted = false;
+  String? openNote;
   final Map<String, ui.Image> images = {};
   String? error;
   @override
@@ -258,54 +259,96 @@ class _InkPreviewState extends State<InkPreview> {
           if (!fitted) {
             fitted = true;
             transform.value = Matrix4.diagonal3Values(
-              c.maxWidth / 1000,
-              c.maxWidth / 1000,
+              c.maxWidth / document.width,
+              c.maxWidth / document.width,
               1,
             );
           }
-          return InteractiveViewer(
-            constrained: false,
-            minScale: .2,
-            maxScale: 4,
-            transformationController: transform,
-            alignment: Alignment.topLeft,
-            child: GestureDetector(
-              onTapUp: (d) {
-                final e = document.elements.reversed
-                    .where(
-                      (e) => e.note.isNotEmpty && e.hit(d.localPosition, 20),
-                    )
-                    .firstOrNull;
-                if (e != null) {
-                  showDialog<void>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('思路标记'),
-                      content: SingleChildScrollView(child: Text(e.note)),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: const Text('关闭'),
-                        ),
-                      ],
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              InteractiveViewer(
+                constrained: false,
+                minScale: .2,
+                maxScale: 4,
+                transformationController: transform,
+                alignment: Alignment.topLeft,
+                child: GestureDetector(
+                  onTapUp: (d) {
+                    final e = document.elements.reversed
+                        .where(
+                          (e) =>
+                              e.points.isNotEmpty &&
+                              (e.kind == 'annotation' || e.note.isNotEmpty) &&
+                              (e.points.last - d.localPosition).distance <
+                                  20 / transform.value.getMaxScaleOnAxis(),
+                        )
+                        .firstOrNull;
+                    if (e != null) {
+                      setState(() => openNote = openNote == e.id ? null : e.id);
+                    }
+                  },
+                  child: SizedBox(
+                    width: document.width,
+                    height: document.height,
+                    child: CustomPaint(
+                      painter: InkPainter(
+                        document,
+                        images,
+                        fontFamily: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.fontFamily,
+                      ),
                     ),
-                  );
-                }
-              },
-              child: SizedBox(
-                width: 1000,
-                height: document.height,
-                child: CustomPaint(
-                  painter: InkPainter(
-                    document,
-                    images,
-                    fontFamily: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.fontFamily,
                   ),
                 ),
               ),
-            ),
+              ValueListenableBuilder<Matrix4>(
+                valueListenable: transform,
+                builder: (_, matrix, child) {
+                  final e = document.elements
+                      .where((e) => e.id == openNote && e.points.isNotEmpty)
+                      .firstOrNull;
+                  if (e == null) return const SizedBox.shrink();
+                  final p = MatrixUtils.transformPoint(matrix, e.points.last);
+                  final width = c.maxWidth < 280 ? c.maxWidth - 16 : 260.0;
+                  return Positioned(
+                    left: (p.dx - width / 2).clamp(8.0, c.maxWidth - width - 8),
+                    top: (p.dy + 16).clamp(8.0, 220.0),
+                    width: width,
+                    child: Material(
+                      elevation: 5,
+                      color: const Color(0xfff1f7ff),
+                      borderRadius: BorderRadius.circular(18),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 190),
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Expanded(child: Text('思路标记')),
+                                  IconButton(
+                                    tooltip: '收起思路',
+                                    onPressed: () =>
+                                        setState(() => openNote = null),
+                                    icon: const Icon(Icons.close, size: 16),
+                                  ),
+                                ],
+                              ),
+                              Text(e.note.isEmpty ? '暂未填写思路' : e.note),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
           );
         },
       ),

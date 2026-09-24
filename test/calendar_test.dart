@@ -74,7 +74,7 @@ void main() {
       expect(find.text('2026-09-11 · 1 次贡献'), findsOneWidget);
       await tester.tap(find.text('查看详情'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('先互换，再相加'));
+      await tester.tap(find.text('已移除的学习内容'));
       await tester.pumpAndSettle();
       expect(find.text('自己的推导'), findsOneWidget);
       expect(tester.takeException(), isNull);

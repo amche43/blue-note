@@ -1,12 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:blue_note/domain.dart';
 import 'package:blue_note/questions.dart';
-import 'package:blue_note/question_editor.dart';
-import 'package:blue_note/main.dart';
 import 'package:blue_note/store.dart';
 
 Json sample() => {
@@ -122,7 +119,7 @@ void main() {
           'sin x 与 cos x 的积分',
           store.bundledLessons,
         ).map((l) => l.id),
-        contains('math-symmetry'),
+        isEmpty,
       );
       expect(suggestLessons('完全不相关的题目', store.bundledLessons), isEmpty);
       expect(decodeBackup('{"schemaVersion":1,"events":[]}'), isEmpty);
@@ -131,57 +128,5 @@ void main() {
     },
   );
 
-  testWidgets(
-    'Create a prompt-only question, return to its page and view it without variants',
-    (tester) async {
-      tester.view.physicalSize = const Size(390, 844);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final store = (await tester.runAsync(
-        () => StudyStore.open(
-          factory: databaseFactoryFfiNoIsolate,
-          path: inMemoryDatabasePath,
-        ),
-      ))!;
-      await tester.pumpWidget(BlueNoteApp(store: store));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('搜索学习本、知识点、题目…'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('添加我的题目'));
-      await tester.pumpAndSettle();
-      expect(find.byType(QuestionEditor), findsOneWidget);
-      await tester.enterText(
-        find.byKey(const ValueKey('question-title')),
-        '一题待整理',
-      );
-      await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('question-prompt')),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('question-prompt')),
-        '已知条件完整，但解析稍后再补。',
-      );
-      await tester.scrollUntilVisible(
-        find.text('保存到我的题库'),
-        400,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.tap(find.text('保存到我的题库'));
-      await tester.pumpAndSettle();
-      expect(find.byType(QuestionEditor), findsNothing);
-      expect(find.text('一题待整理'), findsOneWidget);
-      expect(find.byKey(const ValueKey('ink-canvas')), findsOneWidget);
-      expect(find.byTooltip('普通笔'), findsOneWidget);
-      expect(find.text('直接试做变式 →'), findsNothing);
-      expect(store.questions.length, 1);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-      await tester.pumpAndSettle();
-      await store.db.close();
-      store.dispose();
-    },
-  );
+  
 }

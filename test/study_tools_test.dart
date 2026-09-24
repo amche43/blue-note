@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -27,6 +29,7 @@ void main() {
     tester.view.physicalSize = const Size(320,740); tester.view.devicePixelRatio=1;
     addTearDown(tester.view.resetPhysicalSize);addTearDown(tester.view.resetDevicePixelRatio);
     final store=(await tester.runAsync(() => StudyStore.open(factory:databaseFactoryFfiNoIsolate,path:inMemoryDatabasePath)))!;
+    store.bundledLessons.addAll((jsonDecode(File('test/fixtures/legacy_lessons.json').readAsStringSync())['lessons'] as List).map((e) => Lesson(e))); await store.refresh();
     await store.note('math-symmetry','原来的总结');
     await tester.pumpWidget(MaterialApp(home:Builder(builder:(context)=>Scaffold(body:TextButton(onPressed:()=>Navigator.push<void>(context,
       MaterialPageRoute(builder:(_)=>RecallPage(store:store,lesson:store.lessons.first))),child:const Text('回想'))))));
@@ -48,6 +51,7 @@ void main() {
   });
   testWidgets('Practice center filters using latest attempts and handles empty favorites', (tester) async {
     final store=(await tester.runAsync(() => StudyStore.open(factory:databaseFactoryFfiNoIsolate,path:inMemoryDatabasePath)))!;
+    store.bundledLessons.addAll((jsonDecode(File('test/fixtures/legacy_lessons.json').readAsStringSync())['lessons'] as List).map((e) => Lesson(e))); await store.refresh();
     await store.merge([success('a',1000,correct:false)]);
     await tester.pumpWidget(MaterialApp(home:StudyCenter(store:store,openLesson:(_,_)async{})));
     await tester.pumpAndSettle();

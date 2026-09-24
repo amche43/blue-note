@@ -1,12 +1,15 @@
+import 'notebook_actions.dart';
 import 'dart:convert';
 import 'swipe_delete.dart';
-import 'community.dart';
 import 'package:flutter/material.dart';
 import 'domain.dart';
 import 'store.dart';
 import 'chapter_page.dart';
 import 'fork_updates.dart';
 import 'adoption_page.dart';
+import 'notebook_ui.dart';
+import 'brand.dart';
+import 'ink_page.dart';
 
 bool isKnowledgeBook(StudyStore store, String id) {
   final entries = store.questions.values.where((q) => q['notebookId'] == id);
@@ -31,7 +34,9 @@ Map<String, String> notebooks(StudyStore store) {
     result[e.key.substring(9)] =
         (jsonDecode(e.value) as Json)['title'] as String;
   }
-  return result;
+  return {
+    for (final id in orderedIds(store, 'books', result.keys)) id: result[id]!,
+  };
 }
 
 Future<bool> confirmDeleteNotebook(
@@ -97,95 +102,345 @@ class NotebooksPage extends StatefulWidget {
 
 class AllNotebooksPage extends StatefulWidget {
   final StudyStore store;
+  final bool initialLoosePages;
   final Future<void> Function(Lesson) openLesson;
   const AllNotebooksPage({
     super.key,
     required this.store,
     required this.openLesson,
+    this.initialLoosePages = false,
   });
   @override
   State<AllNotebooksPage> createState() => _AllNotebooksPageState();
 }
 
 class _AllNotebooksPageState extends State<AllNotebooksPage> {
-  String query = '';
+  String query = '', filter = '我创建的';
+  bool searching = false, loosePages = false;
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('我的学习本')),
-    body: ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        TextField(
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.search),
-            hintText: '搜索我的学习本',
-          ),
-          onChanged: (v) => setState(() => query = v.trim()),
+  void initState() {
+    super.initState();
+    loosePages = widget.initialLoosePages;
+    widget.store.addListener(update);
+  }
+
+  void update() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    widget.store.removeListener(update);
+    super.dispose();
+  }
+
+  Future<void> openBook(String id) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NotebooksPage(
+          store: widget.store,
+          initialBook: id,
+          openLesson: widget.openLesson,
         ),
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          icon: const Icon(Icons.add),
-          label: const Text('新建学习本'),
-          onPressed: () async {
-            await Navigator.push<void>(
-              context,
-              MaterialPageRoute(
-                builder: (_) => NotebooksPage(
-                  store: widget.store,
-                  openLesson: widget.openLesson,
+      ),
+    );
+  }
+
+  Future<void> create() async {
+    final names = notebooks(widget.store).values.toSet();
+    var n = 1;
+    while (names.contains('新建笔记本$n')) {
+      n++;
+    }
+    final id = 'book-${newId()}';
+    await widget.store.setting(
+      'notebook:$id',
+      jsonEncode({'title': '新建笔记本$n', 'kind': 'question'}),
+    );
+    if (mounted) {
+      final name = await requestItemName(context, '新建笔记本$n');
+      if (name != null) {
+        await widget.store.setting(
+          'notebook:$id',
+          jsonEncode({'title': name, 'kind': 'question'}),
+        );
+      }
+      if (mounted) await openBook(id);
+    }
+  }
+
+  bool matches(String id, String type) {
+    if (type == '我创建的') return !widget.store.settings.containsKey('fork:$id');
+    if (type == '已上传社区') {
+      return widget.store.questions.entries.any(
+        (e) =>
+            e.value['notebookId'] == id &&
+            widget.store.settings.containsKey('publication:${e.key}'),
+      );
+    }
+    if (type == '待同步') {
+      return widget.store.questions.entries.any((e) {
+        if (e.value['notebookId'] != id || e.value['deleted'] == true) {
+          return false;
+        }
+        final raw = widget.store.settings['publication:${e.key}'];
+        if (raw == null) return false;
+        final revisions =
+            widget.store.events
+                .where((v) => v.type == 'question' && v.lessonId == e.key)
+                .toList()
+              ..sort(compareEvents);
+        return revisions.isNotEmpty &&
+            (jsonDecode(raw) as Json)['revision'] != revisions.last.id;
+      });
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final all = notebooks(widget.store).entries.toList();
+    final visible = all
+        .where(
+          (b) =>
+              (filter == '全部' || matches(b.key, filter)) &&
+              b.value.toLowerCase().contains(query.toLowerCase()),
+        )
+        .toList();
+    return Scaffold(
+      backgroundColor: notebookPaper,
+      appBar: AppBar(
+        leading: BackButton(onPressed: () => Navigator.maybePop(context)),
+        backgroundColor: notebookPaper,
+        title: const Text('笔记本'),
+        actions: [
+          IconButton(
+            tooltip: '搜索笔记本',
+            onPressed: () => setState(() => searching = !searching),
+            icon: const Icon(Icons.search),
+          ),
+          NotebookAddButton(
+            onPressed: loosePages
+                ? () => Navigator.push<String>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => InkPage(store: widget.store),
+                    ),
+                  )
+                : create,
+            tooltip: loosePages ? '新建便笺' : '新建笔记本',
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+        children: [
+          Row(
+            children: [
+              BlueAvatar(
+                photo: widget.store.settings['avatarImage'],
+                index:
+                    int.tryParse(widget.store.settings['avatar'] ?? '0') ?? 0,
+                width: 52,
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '我的知识本',
+                      style: TextStyle(
+                        fontSize: 25,
+                        fontWeight: FontWeight.bold,
+                        color: notebookInk,
+                      ),
+                    ),
+                    SizedBox(height: 6),
+                    Text(
+                      '记录知识，遇见更大的自己',
+                      style: TextStyle(color: Colors.blueGrey),
+                    ),
+                  ],
                 ),
               ),
-            );
-            if (mounted) setState(() {});
-          },
-        ),
-        const SizedBox(height: 12),
-        if (notebooks(widget.store).isEmpty) const Text('还没有学习本。从第一本开始吧。'),
-        ...notebooks(widget.store).entries
-            .where((e) => e.value.contains(query))
-            .map(
-              (e) => SwipeDelete(
-                key: ValueKey(e.key),
-                onDelete: () async {
-                  await confirmDeleteNotebook(context, widget.store, e.key);
-                  if (mounted) setState(() {});
-                },
-                child: ListTile(
-                  leading: Icon(
-                    isKnowledgeBook(widget.store, e.key)
-                        ? Icons.style_outlined
-                        : Icons.menu_book_outlined,
-                  ),
-                  title: Text(e.value),
-                  subtitle: Text(
-                    '${widget.store.questions.values.where((q) => q['notebookId'] == e.key && q['deleted'] == false).length} 条内容',
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () async {
-                    await Navigator.push<void>(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => NotebooksPage(
-                          store: widget.store,
-                          knowledge: isKnowledgeBook(widget.store, e.key),
-                          initialBook: e.key,
-                          openLesson: widget.openLesson,
+            ],
+          ),
+          const SizedBox(height: 22),
+          SizedBox(
+            height: 74,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final f in ['我创建的', '已上传社区', '参与编辑', '待同步', '只读分享', '全部'])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () => setState(() => filter = f),
+                      child: Container(
+                        width: 100,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: filter == f
+                              ? const Color(0xffe0edff)
+                              : const Color(0xffeef3f9),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              f,
+                              style: TextStyle(
+                                color: filter == f
+                                    ? const Color(0xff1263ff)
+                                    : Colors.blueGrey,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              '${f == '全部' ? all.length : all.where((b) => matches(b.key, f)).length}',
+                              style: const TextStyle(color: Colors.blueGrey),
+                            ),
+                          ],
                         ),
                       ),
-                    );
-                    if (mounted) setState(() {});
-                  },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (searching)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: TextField(
+                autofocus: true,
+                onChanged: (v) => setState(() => query = v),
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.search),
+                  hintText: '搜索笔记本名称',
                 ),
               ),
             ),
-      ],
-    ),
-  );
+          const SizedBox(height: 20),
+          if (!loosePages && visible.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(30),
+              child: Column(
+                children: [
+                  const Icon(
+                    Icons.auto_stories_outlined,
+                    size: 44,
+                    color: Colors.blueGrey,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(all.isEmpty ? '从第一本笔记开始。' : '这里还没有匹配的笔记本'),
+                  TextButton(
+                    onPressed: all.isEmpty
+                        ? create
+                        : () => setState(() {
+                            filter = '全部';
+                            query = '';
+                          }),
+                    child: Text(all.isEmpty ? '创建笔记本' : '查看全部'),
+                  ),
+                ],
+              ),
+            ),
+          if (widget.store.questions.values.any(
+            (q) => q['notebookId'] == '' && q['deleted'] == false,
+          )) ...[
+            const Text('随手写下的未归档画布', style: TextStyle(color: Colors.blueGrey)),
+            const SizedBox(height: 12),
+            for (final e in widget.store.questions.entries.where(
+              (e) => e.value['notebookId'] == '' && e.value['deleted'] == false,
+            ))
+              NotebookCard(
+                child: ListTile(
+                  leading: const Icon(Icons.description_outlined),
+                  title: Text(e.value['title'] as String),
+                  onTap: () => Navigator.push<String>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => InkPage(store: widget.store, id: e.key),
+                    ),
+                  ),
+                ),
+              ),
+            if (!widget.store.questions.values.any(
+              (q) => q['notebookId'] == '' && q['deleted'] == false,
+            ))
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('还没有便笺，点击 + 随手记录。'),
+              ),
+          ],
+          if (!loosePages)
+            NotebookReorderList(
+              onReorder: (a, b) => reorderItems(
+                widget.store,
+                'books',
+                visible.map((e) => e.key).toList(),
+                a,
+                b,
+              ),
+              children: [
+                for (final b in visible)
+                  SwipeDelete(
+                    key: ValueKey(b.key),
+                    onUpload: () => uploadEntries(
+                      context,
+                      widget.store,
+                      widget.store.questions.entries
+                          .where((e) => e.value['notebookId'] == b.key)
+                          .map((e) => e.key)
+                          .toList(),
+                    ),
+                    onDelete: () async {
+                      await confirmDeleteNotebook(context, widget.store, b.key);
+                    },
+                    child: NotebookCard(
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.all(14),
+                        leading: NotebookCover(
+                          index: all.indexOf(b),
+                          state: bookIconState(widget.store, b.key),
+                        ),
+                        title: Text(
+                          b.value,
+                          style: const TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.bold,
+                            color: notebookInk,
+                          ),
+                        ),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: Text(
+                            '${notebookChapters(widget.store, b.key).length} 章 · ${matches(b.key, '已上传社区')
+                                ? '有已发布知识页'
+                                : widget.store.settings.containsKey('fork:${b.key}')
+                                ? '我的派生版本'
+                                : '我创建的'}',
+                            style: const TextStyle(color: Colors.blueGrey),
+                          ),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => openBook(b.key),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _NotebooksPageState extends State<NotebooksPage> {
   String? selected;
-  bool busy = false;
   @override
   void initState() {
     super.initState();
@@ -203,17 +458,17 @@ class _NotebooksPageState extends State<NotebooksPage> {
     super.dispose();
   }
 
-  Future<void> create() async {
-    final controller = TextEditingController();
+  bool chapterSearch = false;
+  String chapterQuery = '';
+  Future<void> renameBook() async {
+    final c = TextEditingController(
+      text: notebooks(widget.store)[selected] ?? '',
+    );
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(widget.knowledge ? '新建知识点本' : '新建错题本'),
-        content: TextField(
-          controller: controller,
-          maxLength: 80,
-          decoration: const InputDecoration(labelText: '名称，例如：我的高数错题本'),
-        ),
+        title: const Text('笔记本名称'),
+        content: TextField(controller: c, autofocus: true, maxLength: 80),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -221,210 +476,215 @@ class _NotebooksPageState extends State<NotebooksPage> {
           ),
           TextButton(
             onPressed: () {
-              if (controller.text.trim().isNotEmpty) {
-                Navigator.pop(ctx, controller.text.trim());
-              }
+              if (c.text.trim().isNotEmpty) Navigator.pop(ctx, c.text.trim());
             },
-            child: const Text('创建'),
+            child: const Text('保存'),
           ),
         ],
       ),
     );
-    Future<void>.delayed(const Duration(milliseconds: 350), controller.dispose);
-    if (name == null || !mounted) return;
-    setState(() => busy = true);
-    try {
-      final id = 'book-${newId()}';
-      await widget.store.setting(
-        'notebook:$id',
-        jsonEncode({
-          'title': name,
-          'kind': widget.knowledge ? 'knowledge' : 'question',
-        }),
-      );
-      if (mounted) setState(() => selected = id);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('错题本未保存，请重试')));
-      }
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
+    if (name == null) return;
+    final key = 'notebook:$selected';
+    final meta = jsonDecode(widget.store.settings[key] ?? '{}') as Json;
+    final entries = widget.store.questions.entries
+        .where((e) => e.value['notebookId'] == selected)
+        .toList();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await widget.store.merge(
+      [
+        for (final e in entries)
+          StudyEvent(
+            id: newId(),
+            lessonId: e.key,
+            type: 'question',
+            at: widget.store.events
+                .where((v) => v.lessonId == e.key)
+                .fold<int>(now, (a, v) => v.at >= a ? v.at + 1 : a),
+            payload: {...e.value, 'notebookTitle': name},
+          ),
+      ],
+      expectedQuestions: {for (final e in entries) e.key: e.value},
+      removeSettings: [key],
+      localSettings: {
+        key: jsonEncode({...meta, 'title': name}),
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final books = notebooks(widget.store)
-      ..removeWhere(
-        (id, title) => isKnowledgeBook(widget.store, id) != widget.knowledge,
+    if (selected == null) {
+      return AllNotebooksPage(
+        store: widget.store,
+        openLesson: widget.openLesson,
       );
-    final list =
-        widget.store.questions.entries
-            .where(
-              (e) =>
-                  e.value['deleted'] == false &&
-                  e.value['notebookId'] == selected,
-            )
-            .toList()
-          ..sort(
-            (a, b) => int.parse(
-              a.value['questionNumber'] as String,
-            ).compareTo(int.parse(b.value['questionNumber'] as String)),
-          );
+    }
+    final title = notebooks(widget.store)[selected] ?? '笔记本';
+    final chapters = notebookChapters(widget.store, selected!);
+
+    chapters.removeWhere(
+      (c) => !c.toLowerCase().contains(chapterQuery.toLowerCase()),
+    );
     return Scaffold(
+      backgroundColor: notebookPaper,
       appBar: AppBar(
-        title: Text(
-          selected == null
-              ? (widget.knowledge ? '必备知识点本' : '我的错题本')
-              : books[selected] ?? '错题本',
-        ),
-        leading: selected == null
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => setState(() => selected = null),
+        leading: BackButton(onPressed: () => Navigator.maybePop(context)),
+        backgroundColor: notebookPaper,
+        title: InkWell(
+          onTap: renameBook,
+          child: Row(
+            children: [
+              const NotebookCover(),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
               ),
+            ],
+          ),
+        ),
+        actions: [
+          NotebookAddButton(
+            onPressed: () =>
+                createChapter(context, widget.store, selected!, title),
+            tooltip: '新建章节',
+          ),
+        ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
         children: [
-          Text(
-            widget.knowledge
-                ? '记录定理、端口号、固定搭配等必记内容。先回想，再展开核对。默认私有。'
-                : '错题本默认私有。每题有固定题号，删除前面的题也不会重新编号。',
+          if (chapterSearch)
+            TextField(
+              autofocus: true,
+              onChanged: (v) => setState(() => chapterQuery = v),
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: '搜索章节名称',
+              ),
+            ),
+
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${chapters.length} 个章节',
+                  style: const TextStyle(color: Colors.blueGrey),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          if (selected == null) ...[
-            FilledButton.icon(
-              onPressed: busy ? null : create,
-              icon: const Icon(Icons.add),
-              label: Text(widget.knowledge ? '新建知识点本' : '新建错题本'),
+          const SizedBox(height: 12),
+          NotebookReorderList(
+            onReorder: (a, b) => reorderItems(
+              widget.store,
+              'chapters:$selected',
+              chapters,
+              a,
+              b,
             ),
-            ...books.entries.map(
-              (e) => SwipeDelete(
-                key: ValueKey(e.key),
-                onDelete: () async {
-                  await confirmDeleteNotebook(context, widget.store, e.key);
-                },
-                child: Card(
-                  child: ListTile(
-                    title: Text(e.value),
-                    subtitle: Text(
-                      '${widget.store.questions.values.where((q) => q['notebookId'] == e.key && q['deleted'] == false).length} 道题',
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => setState(() => selected = e.key),
-                  ),
-                ),
-              ),
-            ),
-            if (books.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(20),
-                child: Text('先建一本，再慢慢收集让你卡住的题目。'),
-              ),
-          ] else ...[
-            if (widget.store.settings.containsKey('fork:$selected'))
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.compare_arrows),
-                  label: const Text('查看原作更新与对照'),
-                  onPressed: () => Navigator.push<void>(
+            children: [
+              for (var i = 0; i < chapters.length; i++)
+                SwipeDelete(
+                  key: ValueKey(chapters[i]),
+                  onDelete: () => deleteChapter(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          ForkUpdatesPage(store: widget.store, book: selected!),
+                    widget.store,
+                    selected!,
+                    chapters[i],
+                  ),
+                  onUpload: () => uploadEntries(
+                    context,
+                    widget.store,
+                    widget.store.questions.entries
+                        .where(
+                          (e) =>
+                              e.value['notebookId'] == selected &&
+                              chapterName(e.value) == chapters[i],
+                        )
+                        .map((e) => e.key)
+                        .toList(),
+                  ),
+                  child: NotebookCard(
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.all(14),
+                      leading: NotebookCover(
+                        index: i,
+                        contentIcon:
+                            widget.store.questions.values.any(
+                              (q) =>
+                                  q['deleted'] == false &&
+                                  q['notebookId'] == selected &&
+                                  chapterName(q) == chapters[i],
+                            )
+                            ? Icons.description_outlined
+                            : null,
+                        state: bookIconState(
+                          widget.store,
+                          selected!,
+                          chapter: chapters[i],
+                        ),
+                        number: '${i + 1}'.padLeft(2, '0'),
+                      ),
+                      title: Text(
+                        chapters[i],
+                        style: const TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.bold,
+                          color: notebookInk,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${widget.store.questions.values.where((q) => q['deleted'] == false && q['notebookId'] == selected && chapterName(q) == chapters[i]).length} 个知识页',
+                        style: const TextStyle(color: Colors.blueGrey),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.push<void>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChapterPage(
+                            store: widget.store,
+                            book: selected!,
+                            title: title,
+                            chapter: chapters[i],
+                            openLesson: widget.openLesson,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            if (widget.store.settings.containsKey('fork:$selected'))
-              TextButton.icon(
-                onPressed: () => Navigator.push<void>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => AdoptionHistoryPage(
-                      store: widget.store,
-                      book: selected!,
-                    ),
-                  ),
-                ),
-                icon: const Icon(Icons.history),
-                label: const Text('采纳历史与撤销'),
-              ),
-            FilledButton.icon(
-              onPressed: () async {
-                await createChapter(
-                  context,
-                  widget.store,
-                  selected!,
-                  books[selected]!,
-                );
-                if (mounted) setState(() {});
-              },
-              icon: const Icon(Icons.create_new_folder_outlined),
-              label: const Text('新建章节'),
+            ],
+          ),
+          if (chapters.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Text('点击右上角 + 创建第一章。', textAlign: TextAlign.center),
             ),
-            for (final chapter in notebookChapters(widget.store, selected!))
-              ListTile(
-                key: ValueKey('$selected:$chapter'),
-                leading: const Icon(
-                  Icons.folder_outlined,
-                  color: Color(0xff2878f0),
-                ),
-                title: Text(chapter),
-                subtitle: Text(
-                  '${list.where((e) => chapterName(e.value) == chapter).length} 条内容',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.push<void>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ChapterPage(
-                      store: widget.store,
-                      book: selected!,
-                      title: books[selected]!,
-                      chapter: chapter,
-                      openLesson: widget.openLesson,
-                    ),
-                  ),
-                ),
-              ),
-            if (notebookChapters(widget.store, selected!).isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('先创建第一章，再开始记录题目。'),
-              ),
-            const SizedBox(height: 20),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.public),
-              label: const Text('上传至社区 / 管理已发布内容'),
+          const SizedBox(height: 24),
+          if (widget.store.settings.containsKey('fork:$selected')) ...[
+            TextButton(
               onPressed: () => Navigator.push<void>(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => CommunityPage(store: widget.store),
+                  builder: (_) =>
+                      ForkUpdatesPage(store: widget.store, book: selected!),
                 ),
               ),
+              child: const Text('查看原作更新与对照'),
             ),
-            TextButton.icon(
-              icon: const Icon(Icons.delete_outline),
-              label: const Text('删除学习本'),
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xffd83a49),
+            TextButton(
+              onPressed: () => Navigator.push<void>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      AdoptionHistoryPage(store: widget.store, book: selected!),
+                ),
               ),
-              onPressed: () async {
-                if (await confirmDeleteNotebook(
-                      context,
-                      widget.store,
-                      selected!,
-                    ) &&
-                    mounted) {
-                  setState(() => selected = null);
-                }
-              },
+              child: const Text('采纳历史与撤销'),
             ),
           ],
         ],

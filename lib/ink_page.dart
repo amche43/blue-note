@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'notebook_actions.dart';
+import 'notebook_ui.dart';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -31,7 +34,13 @@ class InkPage extends StatefulWidget {
   State<InkPage> createState() => _InkPageState();
 }
 
-class _InkPageState extends State<InkPage> {
+class _InkPageState extends State<InkPage>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  Timer? autoSave;
+  Future<bool>? saving;
+  final titleFocus = FocusNode();
+  String defaultTitle = '新建知识页1';
+  double? elasticRawX, elasticShownX;
   late Json question;
   Json? expected, capture;
   late InkHistory history;
@@ -39,17 +48,25 @@ class _InkPageState extends State<InkPage> {
   final transform = TransformationController();
   final Map<String, ui.Image> images = {};
   final title = TextEditingController();
+  final noteInput = TextEditingController();
+  String? openNote;
+  bool noteUndoStarted = false;
+  late final AnimationController rebound;
+  Matrix4? reboundFrom, reboundTo;
+  Size viewport = Size.zero;
+
   String tool = 'pen', shape = 'rect', error = '';
-  double penSize = 3, markerSize = 24, eraserSize = 18, textSize = 38;
+  double penSize = 3, markerSize = 24, eraserSize = 22, textSize = 38;
   final colors = <String, int>{
     'pen': 0xff2878f0,
     'highlight': 0xfff9ca45,
+    'annotation': 0xff46bda5,
     'table': 0xff2878f0,
   };
   int get color => colors[tool] ?? 0xff172952;
   set color(int value) => colors[tool] = value;
   int rows = 3, columns = 3;
-  bool thought = false,
+  bool panelOpen = false,
       busy = false,
       ready = false,
       allowPop = false,
@@ -67,6 +84,20 @@ class _InkPageState extends State<InkPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    rebound =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 650),
+        )..addListener(() {
+          if (reboundFrom == null || reboundTo == null) return;
+          final t = Curves.easeOutCubic.transform(rebound.value);
+          transform.value = Matrix4Tween(
+            begin: reboundFrom,
+            end: reboundTo,
+          ).lerp(t);
+        });
+
     stylusOnly = widget.store.settings['canvasStylusOnly'] == 'true';
     expected = widget.id == null ? null : widget.store.questions[widget.id];
     question = {...blankQuestion(), ...?expected, ...?widget.initial};
@@ -82,6 +113,17 @@ class _InkPageState extends State<InkPage> {
       }
     }
     title.text = question['title'] as String;
+    if (title.text.trim().isEmpty) {
+      final names = widget.store.questions.values
+          .map((q) => q['title'])
+          .toSet();
+      var n = 1;
+      while (names.contains('新建知识页$n')) {
+        n++;
+      }
+      title.text = '新建知识页$n';
+    }
+    defaultTitle = title.text;
     history = InkHistory(const InkDocument());
     try {
       if (error.isEmpty) history = InkHistory(seed(question));
@@ -112,7 +154,9 @@ class _InkPageState extends State<InkPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (error.isNotEmpty) return;
       try {
-        await draft.recover(context, (j) {
+        final journal = widget.store.settings[draft.key];
+        if (journal != null) {
+          final j = (jsonDecode(journal) as Json)['data'] as Json;
           question = {...blankQuestion(), ...(j['fields'] as Json)};
           expected = j['base'] as Json?;
           savedId = j['id'] as String?;
@@ -121,12 +165,24 @@ class _InkPageState extends State<InkPage> {
           history = InkHistory(
             InkDocument.decode(question['canvas'] as String),
           );
-        });
+          draft.hasChanges = true;
+        }
+        draft.active = true;
         await loadImages();
         if (savedId != null && !draft.hasChanges) draft.status = '已保存到学习本';
-        if (mounted) setState(() => ready = true);
+        if (mounted) {
+          setState(() => ready = true);
+          if (savedId == null || draft.hasChanges) await save();
+          if (mounted && widget.id == null) {
+            title.selection = TextSelection(
+              baseOffset: 0,
+              extentOffset: title.text.length,
+            );
+            titleFocus.requestFocus();
+          }
+        }
       } catch (e) {
-        if (mounted) setState(() => error = '草稿未能打开，原记录保留：$e');
+        if (mounted) setState(() => error = '未能恢复上次内容，原记录保留：$e');
       }
     });
   }
@@ -228,7 +284,7 @@ class _InkPageState extends State<InkPage> {
       return;
     }
     setState(() => history.commit(next));
-    draft.schedule();
+    changed();
   }
 
   Future<T?> inputDialog<T>({
@@ -280,14 +336,43 @@ class _InkPageState extends State<InkPage> {
     return result;
   }
 
-  Future<bool> save() async {
+  void changed() {
+    draft.schedule();
+    if (mounted) setState(() {});
+    autoSave?.cancel();
+    autoSave = Timer(const Duration(milliseconds: 900), () {
+      if (mounted && ready && !busy && pointer == null && draft.hasChanges) {
+        save();
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      if (ready && draft.hasChanges && pointer == null) save();
+    }
+  }
+
+  Future<bool> save() {
+    if (saving != null) return saving!;
+    final task = saveNow();
+    saving = task;
+    task.whenComplete(() => saving = null);
+    return task;
+  }
+
+  Future<bool> saveNow() async {
     if (!ready || busy) return false;
     setState(() => busy = true);
     draft.active = false;
     try {
       await draft.settle();
       final q = {
-        ...question, 'title': title.text.trim(), 'canvas': doc.encode(),
+        ...question,
+        'title': title.text.trim().isEmpty ? defaultTitle : title.text.trim(),
+        'canvas': doc.encode(),
         // Photos migrated onto the canvas remain there; avoid duplicating large image payloads.
         'questionPhoto': '', 'answerPhoto': '',
         for (final k in [
@@ -316,7 +401,7 @@ class _InkPageState extends State<InkPage> {
       title.text = question['title'] as String;
       draft.hasChanges = false;
       draft.status = '已保存到学习本';
-      message('已保存');
+
       return true;
     } catch (e) {
       message('保存未完成：$e');
@@ -328,36 +413,9 @@ class _InkPageState extends State<InkPage> {
   }
 
   Future<void> leave() async {
-    if (busy) return;
-    if (draft.hasChanges) {
-      final choice = await showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('离开画布前'),
-          content: const Text('可以正式保存，或保留本机草稿稍后继续。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('继续编辑'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, 'draft'),
-              child: const Text('保留草稿'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, 'save'),
-              child: const Text('保存并返回'),
-            ),
-          ],
-        ),
-      );
-      if (choice == null) return;
-      if (choice == 'save' && !await save()) return;
-      if (choice == 'draft' && !await draft.flush()) {
-        message('草稿未保存，请稍后重试');
-        return;
-      }
-    }
+    autoSave?.cancel();
+    if (saving != null && !await saving!) return;
+    if (draft.hasChanges && !await save()) return;
     if (mounted) {
       setState(() => allowPop = true);
       await WidgetsBinding.instance.endOfFrame;
@@ -367,7 +425,12 @@ class _InkPageState extends State<InkPage> {
 
   @override
   void dispose() {
+    autoSave?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    titleFocus.dispose();
     draft.dispose();
+    rebound.dispose();
+    noteInput.dispose();
     transform.dispose();
     title.dispose();
     for (final image in images.values) {
@@ -376,12 +439,54 @@ class _InkPageState extends State<InkPage> {
     super.dispose();
   }
 
-  Offset clampPoint(Offset p) =>
-      Offset(p.dx.clamp(0.0, 1000.0), p.dy.clamp(0.0, doc.height));
+  Offset clampPoint(Offset p) {
+    if ([
+      'pen',
+      'highlight',
+      'annotation',
+      'shape',
+      'table',
+      'text',
+    ].contains(tool)) {
+      final width = p.dx >= doc.width - 80
+          ? math.min(20000.0, math.max(doc.width + 500, p.dx + 200))
+          : doc.width;
+      final height = p.dy >= doc.height - 120
+          ? math.min(20000.0, math.max(doc.height + 700, p.dy + 300))
+          : doc.height;
+      if (width != doc.width || height != doc.height) {
+        history.document = InkDocument(
+          elements: doc.elements,
+          width: width,
+          height: height,
+          ruled: doc.ruled,
+        );
+      }
+    }
+    return Offset(p.dx.clamp(0.0, doc.width), p.dy.clamp(0.0, doc.height));
+  }
+
   void down(PointerDownEvent event) {
-    if (!ready || busy || pointer != null || tool == 'hand') return;
+    if (!ready || busy || pointer != null) return;
+    final hit = doc.elements.reversed
+        .where(
+          (e) =>
+              (e.kind == 'annotation' || e.note.isNotEmpty) &&
+              e.points.isNotEmpty &&
+              (e.points.last - event.localPosition).distance <=
+                  18 / transform.value.getMaxScaleOnAxis(),
+        )
+        .firstOrNull;
+    if (hit != null && tool != 'eraser') {
+      toggleNote(hit);
+      return;
+    }
+    if (tool == 'hand') return;
+    if (panelOpen) setState(() => panelOpen = false);
+    if (openNote != null) setState(() => openNote = null);
+
     if (stylusOnly &&
-        ['pen', 'highlight', 'eraser'].contains(tool) &&
+        ['pen', 'highlight', 'annotation', 'eraser'].contains(tool) &&
         event.kind != ui.PointerDeviceKind.stylus &&
         event.kind != ui.PointerDeviceKind.invertedStylus) {
       return;
@@ -389,7 +494,9 @@ class _InkPageState extends State<InkPage> {
     pointer = event.pointer;
     start = clampPoint(event.localPosition);
     trail = [start!];
-    if (tool == 'pen' || tool == 'highlight') updateStroke();
+    if (tool == 'pen' || tool == 'highlight' || tool == 'annotation') {
+      updateStroke();
+    }
     if (tool == 'select') {
       setState(() => selection = Rect.fromPoints(start!, start!));
     }
@@ -399,7 +506,7 @@ class _InkPageState extends State<InkPage> {
     if (pointer != event.pointer || start == null) return;
     final p = clampPoint(event.localPosition);
     if (trail.length < 12000 && (p - trail.last).distance > .5) trail.add(p);
-    if (tool == 'pen' || tool == 'highlight') {
+    if (tool == 'pen' || tool == 'highlight' || tool == 'annotation') {
       updateStroke();
     } else if (tool == 'eraser') {
       setState(() {});
@@ -475,6 +582,7 @@ class _InkPageState extends State<InkPage> {
               .toSet(),
         );
       }
+      setState(() => panelOpen = selected.isNotEmpty);
       return;
     }
     if (action == null) return;
@@ -483,12 +591,7 @@ class _InkPageState extends State<InkPage> {
         action.kind != 'line') {
       return;
     }
-    String note = '';
-    if (tool == 'highlight' && thought) {
-      final s = await ask('思路标记 · 点击高亮时才显示');
-      if (s == null) return;
-      note = s.trim();
-    }
+    const note = '';
     final e = InkElement(
       id: newId(),
       kind: action.kind,
@@ -501,19 +604,38 @@ class _InkPageState extends State<InkPage> {
       columns: columns,
     );
     commit(doc.withElements([...doc.elements, e]));
+    if (e.kind == 'annotation') toggleNote(e);
   }
 
-  Future<void> editNote(InkElement e) async {
-    final note = await ask('思路标记', value: e.note);
-    if (note != null) {
-      commit(
-        doc.withElements(
-          doc.elements
-              .map((v) => v.id == e.id ? v.change(note: note) : v)
-              .toList(),
-        ),
-      );
+  void toggleNote(InkElement e) {
+    setState(() {
+      if (openNote == e.id) {
+        openNote = null;
+        FocusManager.instance.primaryFocus?.unfocus();
+      } else {
+        openNote = e.id;
+        noteInput.text = e.note;
+        noteUndoStarted = false;
+      }
+      panelOpen = false;
+    });
+  }
+
+  Future<void> editNote(InkElement e) async => toggleNote(e);
+  void updateNote(String value) {
+    if (openNote == null || busy) return;
+    if (!noteUndoStarted) {
+      history.commit(doc);
+      noteUndoStarted = true;
     }
+    setState(
+      () => history.document = doc.withElements(
+        doc.elements
+            .map((e) => e.id == openNote ? e.change(note: value) : e)
+            .toList(),
+      ),
+    );
+    changed();
   }
 
   InkElement textElement(
@@ -558,6 +680,7 @@ class _InkPageState extends State<InkPage> {
     commit(
       InkDocument(
         elements: [...doc.elements, e],
+        width: math.max(doc.width, e.bounds.right + 80).clamp(1000, 20000),
         height: math.max(doc.height, e.bounds.bottom + 60).clamp(400, 20000),
         ruled: doc.ruled,
       ),
@@ -593,7 +716,7 @@ class _InkPageState extends State<InkPage> {
       } else {
         addElement(textElement(result['text'] as String? ?? '', p));
         capture = result['capture'] as Json?;
-        draft.schedule();
+        changed();
       }
     } catch (e) {
       message('照片未插入：$e');
@@ -681,7 +804,7 @@ class _InkPageState extends State<InkPage> {
   Future<void> editSelected() async {
     final e = doc.elements.where((e) => selected.contains(e.id)).firstOrNull;
     if (e == null) return;
-    if (e.kind == 'highlight') {
+    if (e.kind == 'highlight' || e.kind == 'annotation') {
       await editNote(e);
       return;
     }
@@ -804,12 +927,14 @@ class _InkPageState extends State<InkPage> {
               (jsonDecode(meta) as Json)['kind'] ?? 'question';
         }
       });
-      draft.schedule();
+      changed();
     }
   }
 
   Future<void> copyRegion() async {
-    final rect = selection?.intersect(Rect.fromLTWH(0, 0, 1000, doc.height));
+    final rect = selection?.intersect(
+      Rect.fromLTWH(0, 0, doc.width, doc.height),
+    );
     if (rect == null ||
         rect.width < 10 ||
         rect.height < 10 ||
@@ -843,7 +968,7 @@ class _InkPageState extends State<InkPage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, set) => AlertDialog(
-          title: const Text('复制为新题目'),
+          title: const Text('复制为新知识页'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -907,7 +1032,7 @@ class _InkPageState extends State<InkPage> {
         cropped,
         images,
         paper: false,
-      ).paint(c, Size(1000, doc.height));
+      ).paint(c, Size(doc.width, doc.height));
       final picture = recorder.endRecording();
       final img = await picture.toImage(
         (rect.width * scale).ceil(),
@@ -975,12 +1100,19 @@ class _InkPageState extends State<InkPage> {
       onPressed: !ready || busy
           ? null
           : () => setState(() {
+              panelOpen = tool == value ? !panelOpen : true;
+              openNote = null;
               tool = value;
               pending = null;
               start = null;
               pointer = null;
             }),
-      icon: Icon(icon, size: 22),
+      icon: AnimatedSlide(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutBack,
+        offset: tool == value ? const Offset(0, -.18) : Offset.zero,
+        child: Icon(icon, size: 25),
+      ),
     ),
   );
   Widget toolbar() => Row(
@@ -993,6 +1125,7 @@ class _InkPageState extends State<InkPage> {
               toolButton('hand', '移动 / 缩放画布', Icons.pan_tool_outlined),
               toolButton('pen', '普通笔', Icons.edit_outlined),
               toolButton('highlight', '荧光笔', Icons.border_color_outlined),
+              toolButton('annotation', '思路标记笔', Icons.edit_note_rounded),
               toolButton('eraser', '整笔橡皮擦', Icons.auto_fix_normal),
               toolButton('text', '文字 · 点击画布插入', Icons.text_fields),
               toolButton('select', '框选 / 点击思路标记', Icons.select_all),
@@ -1012,8 +1145,11 @@ class _InkPageState extends State<InkPage> {
         tooltip: '撤销',
         onPressed: !busy && history.undoStack.isNotEmpty
             ? () {
-                setState(history.undo);
-                draft.schedule();
+                setState(() {
+                  history.undo();
+                  openNote = null;
+                });
+                changed();
               }
             : null,
         icon: const Icon(Icons.undo),
@@ -1022,238 +1158,468 @@ class _InkPageState extends State<InkPage> {
         tooltip: '重做',
         onPressed: !busy && history.redoStack.isNotEmpty
             ? () {
-                setState(history.redo);
-                draft.schedule();
+                setState(() {
+                  history.redo();
+                  openNote = null;
+                });
+                changed();
               }
             : null,
         icon: const Icon(Icons.redo),
       ),
     ],
   );
-  Widget options() => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    child: Row(
-      children: [
-        if (['pen', 'highlight', 'shape', 'text', 'table'].contains(tool)) ...[
-          for (final c in [
-            0xff172952,
-            0xff2878f0,
-            0xfff9ca45,
-            0xffef668c,
-            0xff46bda5,
-            0xff9865d6,
-          ])
-            IconButton(
-              tooltip: '颜色 ${c.toRadixString(16)}',
-              onPressed: () => setState(() => color = c),
-              icon: Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  color: Color(c),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: color == c ? Colors.black : Colors.transparent,
-                    width: 2,
+  List<double> get sizes => tool == 'eraser'
+      ? [8, 14, 22, 34, 50, 70]
+      : tool == 'text'
+      ? [18, 24, 30, 38, 48, 60]
+      : ['highlight', 'annotation'].contains(tool)
+      ? [8, 14, 20, 24, 32, 40]
+      : [1, 3, 5, 8, 12, 18];
+  double get chosenSize => tool == 'eraser'
+      ? eraserSize
+      : tool == 'text'
+      ? textSize
+      : ['highlight', 'annotation'].contains(tool)
+      ? markerSize
+      : penSize;
+  void setSize(double v) => setState(() {
+    if (tool == 'eraser') {
+      eraserSize = v;
+    } else if (tool == 'text') {
+      textSize = v;
+    } else if (['highlight', 'annotation'].contains(tool)) {
+      markerSize = v;
+    } else {
+      penSize = v;
+    }
+  });
+  Widget options() => Material(
+    key: const ValueKey('ink-tool-panel'),
+    color: Colors.white,
+    elevation: 8,
+    shadowColor: const Color(0x332878f0),
+    borderRadius: BorderRadius.circular(22),
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  {
+                    'pen': '普通笔',
+                    'highlight': '荧光笔',
+                    'annotation': '思路标记笔',
+                    'eraser': '整笔橡皮擦',
+                    'text': '文字',
+                    'shape': '图形',
+                    'table': '表格',
+                    'select': '选择',
+                    'hand': '移动画布',
+                    'space': '插入空行',
+                  }[tool]!,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              IconButton(
+                tooltip: '收起工具选项',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => setState(() => panelOpen = false),
+                icon: const Icon(Icons.close, size: 18),
+              ),
+            ],
+          ),
+          if ([
+            'pen',
+            'highlight',
+            'annotation',
+            'shape',
+            'text',
+            'table',
+          ].contains(tool))
+            Wrap(
+              children: [
+                for (final c in [
+                  0xff172952,
+                  0xff2878f0,
+                  0xfff9ca45,
+                  0xffef668c,
+                  0xff46bda5,
+                  0xff9865d6,
+                ])
+                  IconButton(
+                    key: ValueKey('ink-color-$c'),
+                    tooltip: const {
+                      0xff172952: '墨色',
+                      0xff2878f0: '蓝色',
+                      0xfff9ca45: '黄色',
+                      0xffef668c: '粉红色',
+                      0xff46bda5: '绿色',
+                      0xff9865d6: '紫色',
+                    }[c],
+                    onPressed: () => setState(() => color = c),
+                    icon: Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: Color(c),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: color == c ? Colors.black : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          if ([
+            'pen',
+            'highlight',
+            'annotation',
+            'eraser',
+            'shape',
+            'text',
+            'table',
+          ].contains(tool)) ...[
+            Text(
+              tool == 'eraser'
+                  ? '擦除范围'
+                  : tool == 'text'
+                  ? '字号'
+                  : '笔迹大小',
+              style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
+            ),
+            Wrap(
+              spacing: 4,
+              children: [
+                for (var i = 0; i < 6; i++)
+                  ChoiceChip(
+                    key: ValueKey('ink-size-$i'),
+                    label: Text('${i + 1}'),
+                    selected: chosenSize == sizes[i],
+                    showCheckmark: false,
+                    onSelected: (_) => setSize(sizes[i]),
+                  ),
+              ],
+            ),
+          ],
+          Wrap(
+            spacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (tool == 'shape')
+                DropdownButton<String>(
+                  value: shape,
+                  items: const [
+                    DropdownMenuItem(value: 'rect', child: Text('矩形')),
+                    DropdownMenuItem(value: 'ellipse', child: Text('椭圆')),
+                    DropdownMenuItem(value: 'line', child: Text('直线')),
+                  ],
+                  onChanged: (v) => setState(() => shape = v!),
+                ),
+              if (tool == 'table') ...[
+                const Text('行'),
+                DropdownButton<int>(
+                  value: rows,
+                  items: [
+                    for (var n = 1; n <= 8; n++)
+                      DropdownMenuItem(value: n, child: Text('$n')),
+                  ],
+                  onChanged: (v) => setState(() => rows = v!),
+                ),
+                const Text('列'),
+                DropdownButton<int>(
+                  value: columns,
+                  items: [
+                    for (var n = 1; n <= 8; n++)
+                      DropdownMenuItem(value: n, child: Text('$n')),
+                  ],
+                  onChanged: (v) => setState(() => columns = v!),
+                ),
+              ],
+              if (tool == 'select') ...[
+                TextButton.icon(
+                  onPressed: selected.isEmpty ? null : editSelected,
+                  icon: const Icon(Icons.edit_note),
+                  label: const Text('编辑'),
+                ),
+                TextButton.icon(
+                  onPressed: selected.isEmpty ? null : copyRegion,
+                  icon: const Icon(Icons.copy),
+                  label: const Text('复制为新知识页'),
+                ),
+                IconButton(
+                  tooltip: '左移',
+                  onPressed: () => shift(const Offset(-20, 0)),
+                  icon: const Icon(Icons.arrow_back),
+                ),
+                IconButton(
+                  tooltip: '右移',
+                  onPressed: () => shift(const Offset(20, 0)),
+                  icon: const Icon(Icons.arrow_forward),
+                ),
+                IconButton(
+                  tooltip: '上移',
+                  onPressed: () => shift(const Offset(0, -20)),
+                  icon: const Icon(Icons.arrow_upward),
+                ),
+                IconButton(
+                  tooltip: '下移',
+                  onPressed: () => shift(const Offset(0, 20)),
+                  icon: const Icon(Icons.arrow_downward),
+                ),
+                IconButton(
+                  tooltip: '删除选中动作（可撤销）',
+                  onPressed: selected.isEmpty
+                      ? null
+                      : () {
+                          commit(
+                            doc.withElements(
+                              doc.elements
+                                  .where((e) => !selected.contains(e.id))
+                                  .toList(),
+                            ),
+                          );
+                          setState(() {
+                            selected = {};
+                            selection = null;
+                          });
+                        },
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
+              if (tool == 'hand')
+                const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Text('拖动移动 · 双指或触控板缩放'),
+                ),
+              if (tool == 'space')
+                const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Text('点击后，下面的内容向下移动三行；可撤销'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+  void settleBoundary() {
+    if (viewport.isEmpty) return;
+    final m = transform.value.clone(), scale = m.getMaxScaleOnAxis();
+    final v = m.getTranslation();
+    final x = v.x.clamp(math.min(0.0, viewport.width - doc.width * scale), 0.0);
+    final y = v.y.clamp(
+      math.min(0.0, viewport.height - doc.height * scale),
+      0.0,
+    );
+    if ((v.x - x).abs() < .1 && (v.y - y).abs() < .1) return;
+    reboundFrom = m;
+    reboundTo = m.clone()..setTranslationRaw(x.toDouble(), y.toDouble(), 0);
+    rebound.forward(from: 0);
+  }
+
+  Widget noteBubble(InkElement e, BoxConstraints c) {
+    final anchor = MatrixUtils.transformPoint(transform.value, e.points.last);
+    final measure = TextPainter(
+      text: TextSpan(
+        text: noteInput.text.isEmpty ? '点击填写你的思路' : noteInput.text,
+        style: const TextStyle(fontSize: 14),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: 250);
+    final width = math.min(
+      c.maxWidth - 24,
+      math.max(200.0, measure.width + 36),
+    );
+    measure.dispose();
+    final number =
+        doc.elements
+            .where((v) => v.kind == 'annotation' || v.note.isNotEmpty)
+            .toList()
+            .indexWhere((v) => v.id == e.id) +
+        1;
+    return Positioned(
+      left: anchor.dx.clamp(12.0, math.max(12.0, c.maxWidth - width - 12)),
+      top: (anchor.dy + 20).clamp(8.0, math.max(8.0, c.maxHeight - 160)),
+      width: width,
+      child: Material(
+        key: const ValueKey('thought-bubble'),
+        elevation: 6,
+        color: const Color(0xfff1f7ff),
+        shadowColor: const Color(0x332878f0),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(5),
+          topRight: Radius.circular(20),
+          bottomLeft: Radius.circular(20),
+          bottomRight: Radius.circular(20),
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: math.max(80, math.min(260, c.maxHeight - 24)),
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(14, 8, 8, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '新建思路$number',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xff2878f0),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '收起思路',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => toggleNote(e),
+                      icon: const Icon(Icons.close, size: 16),
+                    ),
+                  ],
+                ),
+                TextField(
+                  key: const ValueKey('thought-input'),
+                  controller: noteInput,
+                  enabled: !busy,
+                  minLines: 1,
+                  maxLines: null,
+                  maxLength: 4000,
+                  onChanged: updateNote,
+                  style: const TextStyle(fontSize: 14, height: 1.5),
+                  decoration: const InputDecoration(
+                    hintText: '点击填写你的思路',
+                    counterText: '',
+                    isDense: true,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    filled: false,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget canvas() => LayoutBuilder(
+    builder: (ctx, c) {
+      viewport = Size(c.maxWidth, c.maxHeight);
+      if (!fitted && c.maxWidth > 0) {
+        fitted = true;
+        transform.value = Matrix4.diagonal3Values(
+          c.maxWidth / doc.width,
+          c.maxWidth / doc.width,
+          1,
+        );
+      }
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(
+              child: ColoredBox(
+                color: Colors.white,
+                child: InteractiveViewer(
+                  transformationController: transform,
+                  constrained: false,
+                  alignment: Alignment.topLeft,
+                  minScale: c.maxWidth / doc.width,
+                  maxScale: math.max(4, c.maxWidth / doc.width),
+                  boundaryMargin: const EdgeInsets.all(90),
+                  panEnabled: tool == 'hand',
+                  scaleEnabled: tool == 'hand',
+                  onInteractionStart: (_) {
+                    rebound.stop();
+                    elasticRawX = null;
+                    elasticShownX = null;
+                  },
+                  onInteractionUpdate: (_) {
+                    final m = transform.value.clone();
+                    final v = m.getTranslation();
+                    if (v.x > 0) {
+                      elasticRawX = math.max(
+                        0.0,
+                        (elasticRawX ?? v.x) +
+                            (elasticShownX == null ? 0 : v.x - elasticShownX!),
+                      );
+                      final resisted = 100 * math.log(1 + elasticRawX! / 100);
+                      elasticShownX = resisted;
+                      transform.value = m..setTranslationRaw(resisted, v.y, 0);
+                    } else {
+                      elasticRawX = null;
+                      elasticShownX = null;
+                    }
+                  },
+                  onInteractionEnd: (_) => settleBoundary(),
+                  child: Listener(
+                    onPointerDown: down,
+                    onPointerMove: move,
+                    onPointerUp: up,
+                    onPointerCancel: (_) => setState(() {
+                      pointer = null;
+                      start = null;
+                      pending = null;
+                    }),
+                    child: SizedBox(
+                      width: doc.width,
+                      height: doc.height,
+                      child: CustomPaint(
+                        key: const ValueKey('ink-canvas'),
+                        painter: InkPainter(
+                          tool == 'eraser' && pointer != null
+                              ? doc.erase(trail, eraserSize)
+                              : doc,
+                          images,
+                          fontFamily: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.fontFamily,
+                          pending: pending,
+                          selection: tool == 'select' ? selection : null,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-        ],
-        if ([
-          'pen',
-          'highlight',
-          'eraser',
-          'text',
-          'shape',
-          'table',
-        ].contains(tool)) ...[
-          Text(
-            tool == 'eraser'
-                ? '擦除范围'
-                : tool == 'text'
-                ? '字号'
-                : '粗细',
-          ),
-          SizedBox(
-            width: 120,
-            child: Slider(
-              min: 1,
-              max: tool == 'text'
-                  ? 60
-                  : tool == 'eraser'
-                  ? 70
-                  : 40,
-              value: tool == 'eraser'
-                  ? eraserSize
-                  : tool == 'highlight'
-                  ? markerSize
-                  : tool == 'text'
-                  ? textSize
-                  : penSize,
-              onChanged: (v) => setState(() {
-                if (tool == 'eraser') {
-                  eraserSize = v;
-                } else if (tool == 'highlight') {
-                  markerSize = v;
-                } else if (tool == 'text') {
-                  textSize = v;
-                } else {
-                  penSize = v;
-                }
-              }),
+            ValueListenableBuilder(
+              valueListenable: transform,
+              builder: (_, value, child) {
+                final e = doc.elements
+                    .where((e) => e.id == openNote && e.points.isNotEmpty)
+                    .firstOrNull;
+                return e == null ? const SizedBox.shrink() : noteBubble(e, c);
+              },
             ),
-          ),
-        ],
-        if (tool == 'highlight')
-          FilterChip(
-            label: const Text('思路标记 ✦'),
-            selected: thought,
-            onSelected: (v) => setState(() => thought = v),
-          ),
-        if (tool == 'shape')
-          DropdownButton<String>(
-            value: shape,
-            items: const [
-              DropdownMenuItem(value: 'rect', child: Text('矩形')),
-              DropdownMenuItem(value: 'ellipse', child: Text('椭圆')),
-              DropdownMenuItem(value: 'line', child: Text('直线')),
-            ],
-            onChanged: (v) => setState(() => shape = v!),
-          ),
-        if (tool == 'table') ...[
-          const Text('行'),
-          DropdownButton<int>(
-            value: rows,
-            items: [
-              for (var n = 1; n <= 8; n++)
-                DropdownMenuItem(value: n, child: Text('$n')),
-            ],
-            onChanged: (v) => setState(() => rows = v!),
-          ),
-          const Text('列'),
-          DropdownButton<int>(
-            value: columns,
-            items: [
-              for (var n = 1; n <= 8; n++)
-                DropdownMenuItem(value: n, child: Text('$n')),
-            ],
-            onChanged: (v) => setState(() => columns = v!),
-          ),
-        ],
-        if (tool == 'select') ...[
-          TextButton.icon(
-            onPressed: selected.isEmpty ? null : editSelected,
-            icon: const Icon(Icons.edit_note),
-            label: const Text('编辑'),
-          ),
-          TextButton.icon(
-            onPressed: selected.isEmpty ? null : copyRegion,
-            icon: const Icon(Icons.copy),
-            label: const Text('复制为新题'),
-          ),
-          IconButton(
-            tooltip: '左移',
-            onPressed: () => shift(const Offset(-20, 0)),
-            icon: const Icon(Icons.arrow_back),
-          ),
-          IconButton(
-            tooltip: '右移',
-            onPressed: () => shift(const Offset(20, 0)),
-            icon: const Icon(Icons.arrow_forward),
-          ),
-          IconButton(
-            tooltip: '上移',
-            onPressed: () => shift(const Offset(0, -20)),
-            icon: const Icon(Icons.arrow_upward),
-          ),
-          IconButton(
-            tooltip: '下移',
-            onPressed: () => shift(const Offset(0, 20)),
-            icon: const Icon(Icons.arrow_downward),
-          ),
-          IconButton(
-            tooltip: '删除选中动作（可撤销）',
-            onPressed: selected.isEmpty
-                ? null
-                : () {
-                    commit(
-                      doc.withElements(
-                        doc.elements
-                            .where((e) => !selected.contains(e.id))
-                            .toList(),
-                      ),
-                    );
-                    setState(() {
-                      selected = {};
-                      selection = null;
-                    });
-                  },
-            icon: const Icon(Icons.delete_outline),
-          ),
-        ],
-        if (tool == 'hand')
-          const Padding(
-            padding: EdgeInsets.all(12),
-            child: Text('拖动移动 · 双指或触控板缩放'),
-          ),
-        if (tool == 'space')
-          const Padding(
-            padding: EdgeInsets.all(12),
-            child: Text('点击后，下面的内容向下移动三行；可撤销'),
-          ),
-      ],
-    ),
-  );
-  Widget canvas() => LayoutBuilder(
-    builder: (ctx, c) {
-      if (!fitted && c.maxWidth > 0) {
-        fitted = true;
-        transform.value = Matrix4.diagonal3Values(
-          c.maxWidth / 1000,
-          c.maxWidth / 1000,
-          1,
-        );
-      }
-      return ColoredBox(
-        color: const Color(0xffedf3fb),
-        child: InteractiveViewer(
-          transformationController: transform,
-          constrained: false,
-          alignment: Alignment.topLeft,
-          minScale: .2,
-          maxScale: 4,
-          boundaryMargin: const EdgeInsets.all(100),
-          panEnabled: tool == 'hand',
-          scaleEnabled: tool == 'hand',
-          child: Listener(
-            onPointerDown: down,
-            onPointerMove: move,
-            onPointerUp: up,
-            onPointerCancel: (_) => setState(() {
-              pointer = null;
-              start = null;
-              pending = null;
-            }),
-            child: SizedBox(
-              width: 1000,
-              height: doc.height,
-              child: CustomPaint(
-                key: const ValueKey('ink-canvas'),
-                painter: InkPainter(
-                  tool == 'eraser' && pointer != null
-                      ? doc.erase(trail, eraserSize)
-                      : doc,
-                  images,
-                  fontFamily: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.fontFamily,
-                  pending: pending,
-                  selection: tool == 'select' ? selection : null,
+            if (panelOpen)
+              Positioned(
+                left: 12,
+                top: 8,
+                width: math.min(320, c.maxWidth - 24),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: math.max(40, c.maxHeight - 16),
+                  ),
+                  child: SingleChildScrollView(child: options()),
                 ),
               ),
-            ),
-          ),
+          ],
         ),
       );
     },
@@ -1271,14 +1637,20 @@ class _InkPageState extends State<InkPage> {
         },
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () {
           if (ready && !busy && history.undoStack.isNotEmpty) {
-            setState(history.undo);
-            draft.schedule();
+            setState(() {
+              history.undo();
+              openNote = null;
+            });
+            changed();
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyY, control: true): () {
           if (ready && !busy && history.redoStack.isNotEmpty) {
-            setState(history.redo);
-            draft.schedule();
+            setState(() {
+              history.redo();
+              openNote = null;
+            });
+            changed();
           }
         },
       },
@@ -1294,9 +1666,10 @@ class _InkPageState extends State<InkPage> {
             ),
             title: TextField(
               controller: title,
+              focusNode: titleFocus,
               enabled: ready && !busy,
               maxLength: 120,
-              onChanged: (_) => draft.schedule(),
+              onChanged: (_) => changed(),
               decoration: const InputDecoration(
                 hintText: '题目标题（选填）',
                 border: InputBorder.none,
@@ -1305,9 +1678,20 @@ class _InkPageState extends State<InkPage> {
             ),
             actions: [
               IconButton(
-                tooltip: '保存画布',
+                tooltip: busy
+                    ? '正在保存到本机'
+                    : draft.hasChanges
+                    ? '修改待保存，点击重试'
+                    : '已保存在本机',
                 onPressed: ready && !busy ? save : null,
-                icon: const Icon(Icons.check),
+                icon: NotebookCover(
+                  kind: NoteIconKind.page,
+                  state: draft.hasChanges || busy
+                      ? NoteIconState.pending
+                      : savedId == null
+                      ? NoteIconState.local
+                      : entryIconState(widget.store, savedId!),
+                ),
               ),
               PopupMenuButton<String>(
                 onSelected: (v) async {
@@ -1327,6 +1711,7 @@ class _InkPageState extends State<InkPage> {
                       InkDocument(
                         elements: doc.elements,
                         height: doc.height,
+                        width: doc.width,
                         ruled: !doc.ruled,
                       ),
                     );
@@ -1355,21 +1740,15 @@ class _InkPageState extends State<InkPage> {
                   }
                 },
                 itemBuilder: (_) => [
-                  const PopupMenuItem(value: 'publish', child: Text('上传至社区')),
                   CheckedPopupMenuItem(
                     value: 'stylus',
                     checked: stylusOnly,
                     child: const Text('仅手写笔绘制'),
                   ),
-                  const PopupMenuItem(
-                    value: 'location',
-                    child: Text('学习本、章节与科目'),
-                  ),
                   PopupMenuItem(
                     value: 'ruled',
                     child: Text(doc.ruled ? '隐藏横线' : '显示横线'),
                   ),
-                  const PopupMenuItem(value: 'extend', child: Text('向下增加画布')),
                   const PopupMenuItem(value: 'fit', child: Text('适合屏幕宽度')),
                 ],
               ),
@@ -1396,21 +1775,10 @@ class _InkPageState extends State<InkPage> {
                           ),
                         ),
                       ),
-                      ListenableBuilder(
-                        listenable: draft,
-                        builder: (_, child) => Text(
-                          draft.status,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.blueGrey,
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
                 toolbar(),
-                options(),
                 if (error.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.all(16),
@@ -1467,7 +1835,7 @@ class _InkPageState extends State<InkPage> {
                                   ),
                                 const Divider(),
                                 const Text(
-                                  '用选择工具点击带蓝色圆点的高亮，查看或编辑思路。文字和表格选中后点击「编辑」。',
+                                  '点击笔迹末尾的圆圈，展开或收起思路气泡。点击工具可调整大小和颜色。',
                                   style: TextStyle(
                                     color: Colors.blueGrey,
                                     fontSize: 12,

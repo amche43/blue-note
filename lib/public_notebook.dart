@@ -1,3 +1,4 @@
+import 'notebook_ui.dart';
 import 'package:flutter/material.dart';
 import 'brand.dart';
 import 'community.dart';
@@ -178,13 +179,27 @@ class _PublicNotebookPageState extends State<PublicNotebookPage> {
             ),
           ),
           const SizedBox(height: 18),
-          Text(
-            widget.book['title'] as String,
-            style: const TextStyle(
-              fontSize: 25,
-              fontWeight: FontWeight.bold,
-              color: Color(0xff172952),
-            ),
+          Row(
+            children: [
+              NotebookCover(
+                state: w?['owner'] == true
+                    ? NoteIconState.published
+                    : w?['member'] == true
+                    ? NoteIconState.shared
+                    : NoteIconState.readOnly,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  widget.book['title'] as String,
+                  style: const TextStyle(
+                    fontSize: 25,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xff172952),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 10),
           Row(

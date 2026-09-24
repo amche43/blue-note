@@ -127,16 +127,7 @@ void main() {
       ),
     );
     await tester.runAsync(() async {
-      for (final scene in ['explore', 'messages', 'capture']) {
-        await precacheImage(ResizeImage(AssetImage('assets/brand/mascot-$scene.png'), width: 180), key.currentContext!);
-      }
-      for (final asset in [
-        'ui-reference',
-        'avatars',
-        'subjects',
-        'mascots',
-        'mascot-transparent',
-      ]) {
+      for (final asset in ['ui-reference','launcher'      ]) {
         await precacheImage(
           AssetImage('assets/brand/$asset.png'),
           key.currentContext!,
@@ -153,13 +144,7 @@ void main() {
       'notebook:${'book-${'e' * 32}'}',
       '{"title":"空白学习本","kind":"question"}',
     );
-    await tester.tap(find.text('搜索学习本、知识点、题目…'));
-    await tester.pumpAndSettle();
-    final search = find.byKey(const ValueKey('search-5'));
-    await tester.ensureVisible(search);
-    await tester.enterText(search, '空白学习本');
-    await tester.pumpAndSettle();
-    expect(find.widgetWithText(ListTile, '空白学习本'), findsOneWidget);
+    expect(find.text('搜索学习本、知识点、题目…'), findsNothing);
     await tester.pumpWidget(
       RepaintBoundary(
         key: key,
@@ -179,20 +164,16 @@ void main() {
     await tester.tap(find.text('通知').last);
     await tester.pumpAndSettle();
     await shot('notifications');
-    await tester.tap(find.byTooltip('添加'));
+    expect(find.byTooltip('添加'), findsNothing);
+    await tester.tap(find.text('首页').last);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('create-page')), findsOneWidget);
-    expect(find.text('创造我的学习成果'), findsOneWidget);
-    expect(find.text('头像与照片审核'), findsNothing);
-    await shot('create-hub');
-    await tester.tap(find.text('创建学习本'));
+    await tester.tap(find.byTooltip('新建笔记本'));
+    await tester.pumpAndSettle();
+    expect(find.text('输入名称'), findsOneWidget);
+    await tester.tap(find.text('使用默认名称'));
     await tester.pumpAndSettle();
     await shot('create');
-    await tester.enterText(find.byType(TextField), '新建测试知识本');
-    await tester.tap(find.text('知识本'));
-    await tester.tap(find.text('创建并打开'));
-    await tester.pumpAndSettle();
-    expect(find.text('新建测试知识本'), findsOneWidget);
+    expect(find.text('新建笔记本1'), findsOneWidget);
     await tester.pumpWidget(
       RepaintBoundary(
         key: key,

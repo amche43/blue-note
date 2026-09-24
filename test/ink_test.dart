@@ -11,10 +11,102 @@ import 'package:blue_note/achievements.dart';
 import 'package:blue_note/ink_page.dart';
 import 'package:blue_note/questions.dart';
 import 'package:blue_note/store.dart';
+import 'package:blue_note/chapter_page.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   sqfliteFfiInit();
+  testWidgets('Blank pages, six presets and atomic inline chapter rename', (
+    tester,
+  ) async {
+    final store = (await tester.runAsync(
+      () => StudyStore.open(
+        factory: databaseFactoryFfiNoIsolate,
+        path: inMemoryDatabasePath,
+      ),
+    ))!;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: InkPage(
+          store: store,
+          notebookId: 'book-11111111111111111111111111111111',
+          notebookTitle: '我的本',
+          chapter: '新建章节1',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(store.questions.length, 1);
+    final entry = store.questions.values.single;
+    expect(entry['title'], '新建知识页1');
+    expect(InkDocument.decode(entry['canvas'] as String).ruled, isFalse);
+    expect(find.byKey(const ValueKey('ink-tool-panel')), findsNothing);
+    final before = tester.getTopLeft(find.byKey(const ValueKey('ink-canvas')));
+    await tester.tap(find.byTooltip('普通笔'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('ink-tool-panel')), findsOneWidget);
+    expect(tester.getTopLeft(find.byKey(const ValueKey('ink-canvas'))), before);
+    expect(find.byType(Slider), findsNothing);
+    for (var i = 0; i < 6; i++) {
+      expect(find.byKey(ValueKey('ink-size-$i')), findsOneWidget);
+    }
+    expect(
+      find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey<String> &&
+            (w.key as ValueKey<String>).value.startsWith('ink-color-'),
+      ),
+      findsNWidgets(6),
+    );
+    await tester.tap(find.byTooltip('移动 / 缩放画布'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('收起工具选项'));
+    await tester.pumpAndSettle();
+    final viewer = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
+    await tester.dragFrom(before + const Offset(150, 120), const Offset(90, 0));
+    await tester.pumpAndSettle();
+    expect(viewer.transformationController!.value.getTranslation().x, closeTo(0, 1));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChapterPage(
+          store: store,
+          book: 'book-11111111111111111111111111111111',
+          title: '我的本',
+          chapter: '新建章节1',
+          openLesson: (_) async {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('chapter-title')),
+      '极限与连续',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(store.questions.values.single['chapter'], '极限与连续');
+    expect(notebookChapters(store, 'book-11111111111111111111111111111111'), [
+      '极限与连续',
+    ]);
+    final creating = createChapter(
+      tester.element(find.byType(ChapterPage)),
+      store,
+      'book-11111111111111111111111111111111',
+      '我的本',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('使用默认名称'));
+    await tester.pumpAndSettle();
+    await creating;
+    expect(
+      notebookChapters(store, 'book-11111111111111111111111111111111'),
+      contains('新建章节1'),
+    );
+    expect(find.byType(AlertDialog), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await store.db.close();
+    store.dispose();
+  });
   test(
     'Stroke eraser intersects segments, removes attached notes, undo restores the entire action',
     () {
@@ -175,7 +267,7 @@ void main() {
             .onPressed,
         isNotNull,
       );
-      await tester.tap(find.byTooltip('保存画布'));
+      await tester.tap(find.byTooltip(RegExp('已保存在本机|修改待保存，点击重试')));
       await tester.pumpAndSettle();
       expect(
         InkDocument.decode(
@@ -221,7 +313,7 @@ void main() {
       );
       await tester.tap(find.byTooltip('重做'));
       await tester.pump();
-      await tester.tap(find.byTooltip('保存画布'));
+      await tester.tap(find.byTooltip(RegExp('已保存在本机|修改待保存，点击重试')));
       await tester.pumpAndSettle();
       expect(s.questions.length, 1);
       final id = s.questions.keys.single;
@@ -231,19 +323,22 @@ void main() {
         ).elements.single.kind,
         'pen',
       );
-      await tester.tap(find.byTooltip('荧光笔'));
+      await tester.tap(find.byTooltip('思路标记笔'));
       await tester.pump();
-      await tester.tap(find.text('思路标记 ✦'));
+      await tester.tap(find.byTooltip('收起工具选项'));
       await tester.pump();
       await tester.dragFrom(
         origin + const Offset(100, 220),
         const Offset(200, 0),
       );
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).last, '这里先使用三阶展开');
-      await tester.tap(find.text('确定'));
+      await tester.enterText(
+        find.byKey(const ValueKey('thought-input')),
+        '这里先使用三阶展开',
+      );
+      await tester.tap(find.byTooltip('收起思路'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('保存画布'));
+      await tester.tap(find.byTooltip(RegExp('已保存在本机|修改待保存，点击重试')));
       await tester.pumpAndSettle();
       expect(
         InkDocument.decode(
@@ -316,6 +411,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('框选 / 点击思路标记'));
       await tester.pump();
+      await tester.tap(find.byTooltip('收起工具选项'));
+      await tester.pump();
       final origin = tester.getTopLeft(
         find.byKey(const ValueKey('ink-canvas')),
       );
@@ -324,7 +421,7 @@ void main() {
         const Offset(280, 200),
       );
       await tester.pump();
-      await tester.runAsync(() => tester.tap(find.text('复制为新题')));
+      await tester.runAsync(() => tester.tap(find.text('复制为新知识页')));
       await tester.pumpAndSettle();
       await tester.tap(find.byType(DropdownButtonFormField<String>));
       await tester.pumpAndSettle();
@@ -342,7 +439,7 @@ void main() {
         );
         if (s.questions.length == 2) break;
       }
-      expect(s.questions.length, 2);
+      expect(s.questions.length, 2, reason: s.questions.toString());
       await tester.pump(const Duration(milliseconds: 500));
       final copied = s.questions.values.firstWhere((q) => q['title'] == '局部题目');
       expect(copied['notebookId'], target);
@@ -468,9 +565,30 @@ void main() {
         final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
         image.dispose();
         await File(
-          '../../work/canvas22-${size.width.toInt()}.png',
+          '../../work/canvas23-${size.width.toInt()}.png',
         ).writeAsBytes(bytes!.buffer.asUint8List());
       });
+      final canvas = tester.renderObject<RenderBox>(
+        find.byKey(const ValueKey('ink-canvas')),
+      );
+      await tester.tapAt(canvas.localToGlobal(const Offset(805, 411)));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('thought-bubble')), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+      await tester.runAsync(() async {
+        final image =
+            await (key.currentContext!.findRenderObject()
+                    as RenderRepaintBoundary)
+                .toImage(pixelRatio: 1.5);
+        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+        image.dispose();
+        await File(
+          '../../work/canvas23-bubble-${size.width.toInt()}.png',
+        ).writeAsBytes(bytes!.buffer.asUint8List());
+      });
+      await tester.tapAt(canvas.localToGlobal(const Offset(805, 411)));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('thought-bubble')), findsNothing);
     }
     await tester.pumpWidget(const SizedBox());
     await s.db.close();

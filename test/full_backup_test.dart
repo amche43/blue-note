@@ -21,7 +21,7 @@ void main() {
       final a = await open(), b = await open();
       final photo = base64Encode(
         (await rootBundle.load(
-          'assets/brand/app-icon.png',
+          'assets/brand/launcher.png',
         )).buffer.asUint8List(),
       );
       final id = await a.saveQuestion(

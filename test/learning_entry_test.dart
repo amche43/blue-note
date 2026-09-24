@@ -5,7 +5,6 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:blue_note/store.dart';
 import 'package:blue_note/questions.dart';
 import 'package:blue_note/knowledge_page.dart';
-import 'package:blue_note/entry_composer.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -90,68 +89,5 @@ void main() {
     await store.db.close();
     store.dispose();
   });
-  testWidgets(
-    'Quick recording protects unsaved thoughts and saves through three steps',
-    (tester) async {
-      tester.view.physicalSize = const Size(390, 844);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final store = (await tester.runAsync(
-        () => StudyStore.open(
-          factory: databaseFactoryFfiNoIsolate,
-          path: inMemoryDatabasePath,
-        ),
-      ))!;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(
-            builder: (ctx) => Scaffold(
-              body: TextButton(
-                onPressed: () => Navigator.push<String>(
-                  ctx,
-                  MaterialPageRoute(
-                    builder: (_) => EntryComposer(store: store),
-                  ),
-                ),
-                child: const Text('开始录入'),
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.tap(find.text('开始录入'));
-      await tester.pumpAndSettle();
-      final body = find.byWidgetPredicate(
-        (w) => w is TextField && w.decoration?.labelText == '题目正文',
-      );
-      await tester.ensureVisible(body);
-      await tester.enterText(body, '这是一道等待理解的题目');
-      await tester.pumpAndSettle();
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      expect(find.text('先把这份内容留下来？'), findsOneWidget);
-      await tester.tap(find.text('继续编辑'));
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('下一步'));
-      await tester.tap(find.text('下一步'));
-      await tester.pumpAndSettle();
-      final breakthrough = find.byWidgetPredicate(
-        (w) => w is TextField && w.decoration?.labelText == '关键突破点：看到什么，就该想到什么',
-      );
-      await tester.enterText(breakthrough, '先检查适用条件');
-      await tester.ensureVisible(find.text('下一步'));
-      await tester.tap(find.text('下一步'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('保存学习条目'));
-      await tester.pumpAndSettle();
-      expect(find.text('开始录入'), findsOneWidget);
-      expect(store.questions.length, 1);
-      expect(store.questions.values.single['action'], '先检查适用条件');
-      expect(store.questions.values.single['title'], '未命名题目');
-      await tester.pumpWidget(const SizedBox());
-      await store.db.close();
-      store.dispose();
-    },
-  );
+  
 }

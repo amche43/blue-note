@@ -204,7 +204,7 @@ void main() {
         PublicNotebookPage(store: store, client: client, book: client.book),
       );
       await tester.runAsync(() async {
-        for (final asset in ['ui-reference', 'avatars', 'mascots']) {
+        for (final asset in ['ui-reference', 'launcher']) {
           await precacheImage(
             AssetImage('assets/brand/$asset.png'),
             key.currentContext!,
@@ -266,7 +266,7 @@ void main() {
       await shot('avatar-picker');
       await tester.tap(find.byKey(const ValueKey('avatar-choice-3')));
       await tester.pumpAndSettle();
-      expect(find.text('小尺'), findsOneWidget);
+      expect(find.text('靛蓝'), findsOneWidget);
       await shot('register');
       tester.view.physicalSize = const Size(320, 740);
       for (final page in [

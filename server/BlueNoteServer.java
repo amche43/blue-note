@@ -75,7 +75,7 @@ public final class BlueNoteServer {
             if (!(Json.parse(ink) instanceof Map<?,?> doc) || !Long.valueOf(1).equals(doc.get("version")) ||
                 !(doc.get("elements") instanceof List<?> actions) || actions.size()>3000 || !(doc.get("ruled") instanceof Boolean))
               throw new IllegalArgumentException("Invalid canvas document");
-            canvas=!actions.isEmpty();
+            canvas=true;
           }
         }
         if (((String)payload.get("prompt")).isBlank() && !photo && !canvas)

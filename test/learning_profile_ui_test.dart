@@ -21,7 +21,7 @@ void main(){
   final key=GlobalKey();
   await tester.pumpWidget(RepaintBoundary(key:key,child:MaterialApp(debugShowCheckedModeBanner:false,theme:blueNoteTheme(),home:LearningProfilePage(client:ProfileFixture(),userId:'a'*32))));
   await tester.pumpAndSettle();expect(find.text('蓝笔同学'),findsOneWidget);
-  await tester.runAsync(()async{await precacheImage(const AssetImage('assets/brand/avatars.png'),key.currentContext!);});
+  await tester.runAsync(()async{await precacheImage(const AssetImage('assets/brand/launcher.png'),key.currentContext!);});
   await tester.pumpAndSettle();
   await tester.runAsync(()async{final picture=await (key.currentContext!.findRenderObject() as RenderRepaintBoundary).toImage(pixelRatio:2);final bytes=await picture.toByteData(format:ui.ImageByteFormat.png);await File('../ui14-achievements.png').writeAsBytes(bytes!.buffer.asUint8List());picture.dispose();});
   await tester.tap(find.text('初次记录'));await tester.pumpAndSettle();expect(find.text('优秀 · 50 条'),findsOneWidget);expect(find.text('卓越 · 200 条'),findsOneWidget);

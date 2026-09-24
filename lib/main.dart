@@ -1,4 +1,5 @@
 import 'ink_view.dart';
+import 'question_editor.dart' show importQuestionDialog, shareQuestionDialog;
 import 'ink_page.dart';
 import 'dart:async';
 import 'settings_page.dart';
@@ -10,13 +11,11 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'domain.dart';
 import 'store.dart';
-import 'question_editor.dart';
 import 'community.dart';
 import 'study_tools.dart';
 import 'notebooks.dart';
 import 'knowledge_page.dart';
 import 'workbench.dart';
-import 'entry_composer.dart';
 import 'studio_shell.dart';
 import 'backup_page.dart';
 
@@ -66,6 +65,7 @@ class BlueNoteApp extends StatelessWidget {
     supportedLocales: const [Locale('zh', 'CN')],
     localizationsDelegates: GlobalMaterialLocalizations.delegates,
     theme: blueNoteTheme(),
+    scrollBehavior: const BlueScrollBehavior(),
     home: showWelcome
         ? WelcomePage(
             store: store,
@@ -73,6 +73,13 @@ class BlueNoteApp extends StatelessWidget {
           )
         : HomePage(store: store),
   );
+}
+
+class BlueScrollBehavior extends MaterialScrollBehavior {
+  const BlueScrollBehavior();
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) =>
+      const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics());
 }
 
 ThemeData blueNoteTheme() {
@@ -109,7 +116,7 @@ ThemeData blueNoteTheme() {
         onInverseSurface: Colors.white,
       );
   final rounded = RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(12),
+    borderRadius: BorderRadius.circular(18),
   );
   return ThemeData(
     useMaterial3: true,
@@ -354,7 +361,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> addQuestion() async {
     final id = await Navigator.push<String>(
       context,
-      MaterialPageRoute(builder: (_) => QuestionEditor(store: store)),
+      MaterialPageRoute(builder: (_) => InkPage(store: store)),
     );
     if (!mounted || id == null) return;
     final lesson = store.lessons.where((lesson) => lesson.id == id).firstOrNull;
@@ -364,7 +371,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> recordContent() async {
     final id = await Navigator.push<String>(
       context,
-      MaterialPageRoute(builder: (_) => EntryComposer(store: store)),
+      MaterialPageRoute(builder: (_) => InkPage(store: store)),
     );
     if (!mounted || id == null) return;
     final lesson = store.lessons.where((l) => l.id == id).firstOrNull;
@@ -425,6 +432,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   );
 
   List<Widget> today() {
+    if (store.lessons.isEmpty) return [const Text('从自己的笔记本开始记录知识。')];
     final due = store.due;
     final unseen = store.lessons
         .where((l) => store.progress(l.id).attempts == 0)
