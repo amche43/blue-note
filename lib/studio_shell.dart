@@ -286,45 +286,23 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
   }
 
   Widget section(String title, {VoidCallback? more}) => Padding(
-    padding: const EdgeInsets.only(top: 16, bottom: 8),
+    padding: const EdgeInsets.only(top: 24, bottom: 12),
     child: Row(
       children: [
         Expanded(
           child: Text(
             title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
           ),
         ),
         if (more != null)
-          InkWell(
-            onTap: more,
-            child: const Text(
-              '查看全部 ›',
-              style: TextStyle(fontSize: 11, color: Colors.blueGrey),
-            ),
+          TextButton.icon(
+            onPressed: more,
+            label: const Text('查看全部'),
+            iconAlignment: IconAlignment.end,
+            icon: const Icon(Icons.chevron_right, size: 18),
           ),
       ],
-    ),
-  );
-  Widget search(VoidCallback action) => InkWell(
-    onTap: action,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: const Color(0xffe7eef9)),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.search, size: 18, color: Colors.blueGrey),
-          SizedBox(width: 8),
-          Text(
-            '搜索笔记本、知识点、题目…',
-            style: TextStyle(fontSize: 12, color: Colors.blueGrey),
-          ),
-        ],
-      ),
     ),
   );
   Widget stat(String value, String label, {VoidCallback? onTap}) => Expanded(
@@ -354,22 +332,60 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
   );
   List<Widget> home() {
     return [
-      Row(
-        children: [
-          Expanded(
-            child: Text(
-              '你好，${store.settings['profileName'] ?? '同学'}\n${greetingFor(DateTime.now())}',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                height: 1.35,
+      Container(
+        padding: const EdgeInsets.fromLTRB(20, 22, 16, 20),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xffe7f1ff), Color(0xfff5f9ff)],
+          ),
+          border: Border.all(color: const Color(0xffdceaff)),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '今天，从这里继续',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: studioBlue,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  Text(
+                    '你好，${store.settings['profileName'] ?? '同学'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xff172952),
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    greetingFor(DateTime.now()),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.45,
+                      color: Color(0xff526888),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          NotebookAddButton(onPressed: addBook, tooltip: '新建笔记本'),
-        ],
+            const SizedBox(width: 8),
+            NotebookAddButton(onPressed: addBook, tooltip: '新建笔记本'),
+          ],
+        ),
       ),
-      const SizedBox(height: 14),
       section('我的笔记本'),
       if (notebooks(store).isEmpty)
         ListTile(
@@ -416,8 +432,16 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
             ),
         ],
       ),
-      const SizedBox(height: 24),
-      ContributionCalendar(store: store),
+      const SizedBox(height: 14),
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: const Color(0xffe5edf8)),
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: ContributionCalendar(store: store),
+      ),
     ];
   }
 
@@ -520,27 +544,17 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
     } catch (_) {
       /* Render the connection setup entry below. */
     }
-    return ListView(
-      padding: const EdgeInsets.all(22),
-      children: [
-        const Text(
-          '探索笔记本',
-          style: TextStyle(fontSize: 23, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 16),
-        search(connectCommunity),
-        const SizedBox(height: 32),
-        const Center(child: SceneMascot(MascotScene.explore, width: 180)),
-        const SizedBox(height: 20),
-        const Text('连接后台，发现大家的学习成果', textAlign: TextAlign.center),
-        const Text(
-          '公开的错题本、笔记本会出现在这里。',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 12, color: Colors.blueGrey),
-        ),
-        const SizedBox(height: 20),
-        FilledButton(onPressed: connectCommunity, child: const Text('连接本机社区')),
+    return _CommunityIntro(
+      title: '探索笔记本',
+      eyebrow: '发现与分享',
+      headline: '看看同学们如何理解一道题',
+      description: '连接本机社区后，浏览公开笔记本、收藏有用的整理，也可以分享自己的学习过程。',
+      icon: Icons.explore_outlined,
+      features: const [
+        (Icons.auto_stories_outlined, '发现公开笔记本'),
+        (Icons.bookmark_border_rounded, '收藏值得回看的内容'),
       ],
+      onConnect: connectCommunity,
     );
   }
 
@@ -562,27 +576,17 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
         );
       }
     } catch (_) {}
-    return ListView(
-      padding: const EdgeInsets.all(22),
-      children: [
-        const Text(
-          '通知',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 28),
-        const Center(child: SceneMascot(MascotScene.messages, width: 180)),
-        const SizedBox(height: 20),
-        const Text('与伙伴一起建设笔记本', textAlign: TextAlign.center),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: Text(
-            '在这里处理共同维护申请，与笔记本的伙伴聊天。',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: Colors.blueGrey),
-          ),
-        ),
-        FilledButton(onPressed: connectCommunity, child: const Text('连接本机社区')),
+    return _CommunityIntro(
+      title: '通知',
+      eyebrow: '一起维护',
+      headline: '每一次交流，都让理解更完整',
+      description: '连接本机社区后，在这里查看协作申请、改进提案和笔记本聊天。',
+      icon: Icons.forum_outlined,
+      features: const [
+        (Icons.mark_email_unread_outlined, '处理协作与改进'),
+        (Icons.chat_bubble_outline_rounded, '与学习伙伴交流'),
       ],
+      onConnect: connectCommunity,
     );
   }
 
@@ -599,7 +603,7 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
               ? notifications()
               : ListView(
                   key: ValueKey('studio-$tab'),
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
                   children: tab == 0 ? home() : profile(),
                 ),
         ),
@@ -612,12 +616,14 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
           color: Colors.white,
           border: Border(top: BorderSide(color: Color(0xffe8eef8))),
         ),
-        height: 64,
+        height: 70,
         child: Row(
           children: List.generate(4, (position) {
             final i = [0, 1, 3, 4][position];
+            final selected = tab == i;
             return Expanded(
               child: InkWell(
+                borderRadius: BorderRadius.circular(18),
                 onTap: () {
                   setState(() {
                     tab = i;
@@ -628,22 +634,38 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      [
-                        Icons.home_outlined,
-                        Icons.explore_outlined,
-                        Icons.add,
-                        Icons.notifications_none,
-                        Icons.person_outline,
-                      ][i],
-                      color: tab == i ? studioBlue : Colors.blueGrey,
-                      size: 22,
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      width: 54,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? const Color(0xffe8f1ff)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Icon(
+                        [
+                          Icons.home_outlined,
+                          Icons.explore_outlined,
+                          Icons.add,
+                          Icons.notifications_none,
+                          Icons.person_outline,
+                        ][i],
+                        color: selected ? studioBlue : const Color(0xff71829d),
+                        size: 22,
+                      ),
                     ),
+                    const SizedBox(height: 3),
                     Text(
                       ['首页', '探索', '', '通知', '我的'][i],
                       style: TextStyle(
-                        fontSize: 10,
-                        color: tab == i ? studioBlue : Colors.blueGrey,
+                        fontSize: 11,
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        color: selected ? studioBlue : const Color(0xff71829d),
                       ),
                     ),
                   ],
@@ -654,6 +676,109 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
         ),
       ),
     ),
+  );
+}
+
+class _CommunityIntro extends StatelessWidget {
+  final String title, eyebrow, headline, description;
+  final IconData icon;
+  final List<(IconData, String)> features;
+  final VoidCallback onConnect;
+  const _CommunityIntro({
+    required this.title,
+    required this.eyebrow,
+    required this.headline,
+    required this.description,
+    required this.icon,
+    required this.features,
+    required this.onConnect,
+  });
+
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
+    children: [
+      Text(title, style: Theme.of(context).textTheme.headlineSmall),
+      const SizedBox(height: 20),
+      Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xffe5f0ff), Color(0xfff6f9ff)],
+          ),
+          border: Border.all(color: const Color(0xffdceaff)),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(17),
+              ),
+              child: Icon(icon, color: studioBlue, size: 28),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              eyebrow,
+              style: const TextStyle(
+                color: studioBlue,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              headline,
+              style: const TextStyle(
+                fontSize: 21,
+                height: 1.35,
+                fontWeight: FontWeight.w800,
+                color: Color(0xff172952),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              description,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.6,
+                color: Color(0xff526888),
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 20),
+      for (final feature in features)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            children: [
+              Icon(feature.$1, size: 20, color: studioBlue),
+              const SizedBox(width: 12),
+              Text(
+                feature.$2,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      const SizedBox(height: 16),
+      FilledButton.icon(
+        onPressed: onConnect,
+        icon: const Icon(Icons.arrow_forward_rounded),
+        label: const Text('连接本机社区'),
+      ),
+    ],
   );
 }
 

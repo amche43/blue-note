@@ -88,29 +88,62 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
   Widget build(BuildContext context) => RefreshIndicator(
     onRefresh: load,
     child: ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 30),
       children: [
         Row(
           children: [
             const Expanded(
               child: Text(
                 '通知',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
               ),
             ),
-            IconButton(
+            IconButton.filledTonal(
               tooltip: '刷新通知',
               onPressed: busy ? null : load,
-              icon: const Icon(Icons.refresh),
+              icon: const Icon(Icons.refresh_rounded),
             ),
           ],
         ),
-        const Text(
-          '一起维护，让每一份理解更完整。',
-          style: TextStyle(fontSize: 12, color: Colors.blueGrey),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xffe5f0ff), Color(0xfff6f9ff)],
+            ),
+            border: Border.all(color: const Color(0xffdceaff)),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.forum_outlined, size: 28, color: Color(0xff2878f0)),
+              SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '和伙伴一起，把想法写完整',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '协作申请、聊天与改进都在这里。',
+                      style: TextStyle(fontSize: 12, color: Color(0xff526888)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 20),
         SegmentedButton<int>(
+          showSelectedIcon: false,
           segments: const [
             ButtonSegment(value: 0, label: Text('协作申请')),
             ButtonSegment(value: 1, label: Text('聊天')),
@@ -120,82 +153,89 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
           onSelectionChanged: (s) => setState(() => tab = s.first),
         ),
         const SizedBox(height: 16),
-        if (busy) const LinearProgressIndicator(),
+        if (busy) const LinearProgressIndicator(minHeight: 3),
         if (error.isNotEmpty)
-          Text(error, style: const TextStyle(color: Colors.red)),
-        if (tab == 2) ...[
-          if (!busy && improvements.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(28),
-              child: Column(
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
                 children: [
-                  SceneMascot(MascotScene.messages, width: 130),
-                  SizedBox(height: 16),
-                  Text('还没有改进消息'),
-                  Text(
-                    '收到的提案与自己提交的处理结果会出现在这里。',
-                    style: TextStyle(fontSize: 12, color: Colors.blueGrey),
-                  ),
+                  const Icon(Icons.wifi_off_rounded, color: Colors.red),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(error)),
+                  TextButton(onPressed: load, child: const Text('重试')),
                 ],
               ),
             ),
+          ),
+        if (tab == 2) ...[
+          if (!busy && improvements.isEmpty && error.isEmpty)
+            const _InboxEmpty(
+              icon: Icons.edit_note_rounded,
+              title: '还没有改进消息',
+              description: '收到的提案与自己提交的处理结果会出现在这里。',
+            ),
           ...improvements.map(
-            (item) => ListTile(
-              leading: Icon(
-                item['status'] == 'pending'
-                    ? Icons.rate_review_outlined
-                    : Icons.task_alt,
-                color: const Color(0xff2878f0),
+            (item) => Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: const BorderSide(color: Color(0xffe5edf8)),
               ),
-              title: Text(
-                item['entryTitle'] as String,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Text(
-                '${item['title']}\n${item['canReview'] == 1 ? '收到 ${item['name']} 的改进' : '我提交的改进'} · ${{'pending': '待核对', 'accepted': '已合并', 'rejected': '未采纳'}[item['status']]}',
-              ),
-              isThreeLine: true,
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () async {
-                await Navigator.push<void>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ImprovementsPage(
-                      client: widget.client,
-                      bookId: item['book'] as String,
-                      initialProposalId: item['id'] as String,
+              clipBehavior: Clip.antiAlias,
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 7,
+                ),
+                leading: Icon(
+                  item['status'] == 'pending'
+                      ? Icons.rate_review_outlined
+                      : Icons.task_alt,
+                  color: const Color(0xff2878f0),
+                ),
+                title: Text(
+                  item['entryTitle'] as String,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  '${item['title']}\n${item['canReview'] == 1 ? '收到 ${item['name']} 的改进' : '我提交的改进'} · ${{'pending': '待核对', 'accepted': '已合并', 'rejected': '未采纳'}[item['status']]}',
+                ),
+                isThreeLine: true,
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  await Navigator.push<void>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ImprovementsPage(
+                        client: widget.client,
+                        bookId: item['book'] as String,
+                        initialProposalId: item['id'] as String,
+                      ),
                     ),
-                  ),
-                );
-                if (mounted) await load();
-              },
+                  );
+                  if (mounted) await load();
+                },
+              ),
             ),
           ),
         ],
         if (tab == 0) ...[
-          if (!busy && applications.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(32),
-              child: Column(
-                children: [
-                  SceneMascot(MascotScene.messages, width: 130),
-                  SizedBox(height: 16),
-                  Text('还没有协作申请'),
-                  Text(
-                    '在笔记本中申请参与维护，处理结果会出现在这里。',
-                    style: TextStyle(fontSize: 12, color: Colors.blueGrey),
-                  ),
-                ],
-              ),
+          if (!busy && applications.isEmpty && error.isEmpty)
+            const _InboxEmpty(
+              icon: Icons.people_outline_rounded,
+              title: '还没有协作申请',
+              description: '在笔记本中申请参与维护，处理结果会出现在这里。',
             ),
           ...applications.map(
             (a) => Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(17),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xffe5edf8)),
+                borderRadius: BorderRadius.circular(18),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -219,7 +259,11 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Text('《${a['title']}》'),
+                  Text(
+                    '《${a['title']}》',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 5),
                   Text(
                     a['reason'] as String,
                     style: const TextStyle(
@@ -227,6 +271,7 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
                       color: Colors.blueGrey,
                     ),
                   ),
+                  const SizedBox(height: 9),
                   if (a['canReview'] == 1 && a['status'] == 'pending')
                     Row(
                       children: [
@@ -242,11 +287,10 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
                       ],
                     )
                   else
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Text(
-                        applicationLabels[a['status']] ?? '未知状态',
-                        style: const TextStyle(color: Color(0xff2878f0)),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Chip(
+                        label: Text(applicationLabels[a['status']] ?? '未知状态'),
                       ),
                     ),
                 ],
@@ -254,25 +298,37 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
             ),
           ),
         ] else if (tab == 1) ...[
-          if (!busy && rooms.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(30),
-              child: Text('加入共同维护后，在这里与笔记本的伙伴交流。'),
+          if (!busy && rooms.isEmpty && error.isEmpty)
+            const _InboxEmpty(
+              icon: Icons.chat_bubble_outline_rounded,
+              title: '还没有协作聊天',
+              description: '加入共同维护后，在这里与笔记本的伙伴交流。',
             ),
           ...rooms.map(
-            (r) => ListTile(
-              contentPadding: const EdgeInsets.symmetric(vertical: 8),
-              leading: const BlueAvatar(index: 1),
-              title: Text(r['title'] as String),
-              subtitle: const Text('笔记本协作聊天'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.push<void>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => BookChatPage(
-                    client: widget.client,
-                    book: r['id'] as String,
-                    title: r['title'] as String,
+            (r) => Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: const BorderSide(color: Color(0xffe5edf8)),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                leading: const BlueAvatar(index: 1),
+                title: Text(r['title'] as String),
+                subtitle: const Text('笔记本协作聊天'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => BookChatPage(
+                      client: widget.client,
+                      book: r['id'] as String,
+                      title: r['title'] as String,
+                    ),
                   ),
                 ),
               ),
@@ -290,6 +346,47 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
           ),
           icon: const Icon(Icons.fact_check_outlined),
           label: const Text('纠错反馈与处理结果'),
+        ),
+      ],
+    ),
+  );
+}
+
+class _InboxEmpty extends StatelessWidget {
+  final IconData icon;
+  final String title, description;
+  const _InboxEmpty({
+    required this.icon,
+    required this.title,
+    required this.description,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 34),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      border: Border.all(color: const Color(0xffe5edf8)),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Column(
+      children: [
+        Icon(icon, size: 34, color: const Color(0xff94baf1)),
+        const SizedBox(height: 12),
+        Text(
+          title,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          description,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 12,
+            height: 1.5,
+            color: Color(0xff71829d),
+          ),
         ),
       ],
     ),

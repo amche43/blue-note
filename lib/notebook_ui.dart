@@ -21,17 +21,19 @@ class NotebookAddButton extends StatelessWidget {
   });
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(right: 12, top: 5, bottom: 5),
-    child: IconButton.filledTonal(
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: IconButton.filled(
       tooltip: tooltip,
       onPressed: onPressed,
       style: IconButton.styleFrom(
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xff1263ff),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        minimumSize: const Size(52, 52),
+        backgroundColor: const Color(0xff2878f0),
+        foregroundColor: Colors.white,
+        elevation: 2,
+        shadowColor: const Color(0x552878f0),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(17)),
+        minimumSize: const Size(48, 48),
       ),
-      icon: const Icon(Icons.add, size: 32),
+      icon: const Icon(Icons.add_rounded, size: 27),
     ),
   );
 }
@@ -238,15 +240,15 @@ class NotebookCard extends StatelessWidget {
             ),
           )
         : tile;
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(16),
-      clipBehavior: Clip.antiAlias,
-      child: Theme(
-        data: Theme.of(context).copyWith(
-          splashColor: Colors.white,
-          highlightColor: Colors.white.withValues(alpha: .7),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Material(
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: Color(0xffe5edf8)),
         ),
+        clipBehavior: Clip.antiAlias,
         child: content,
       ),
     );
