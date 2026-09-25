@@ -75,7 +75,7 @@ void main() {
           final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
           image.dispose();
           await File(
-            '../../work/ui25-$name.png',
+            '../../work/ui26-$name.png',
           ).writeAsBytes(bytes!.buffer.asUint8List());
         });
       }
@@ -100,12 +100,13 @@ void main() {
         expect(find.byTooltip('新建章节'), findsOneWidget);
         await tester.tap(find.text('函数与极限'));
         await shot('pages-${width.toInt()}');
-        expect(find.byTooltip('新建知识页'), findsOneWidget);
+        expect(find.byTooltip('新建页面'), findsOneWidget);
         expect(find.textContaining('协作者'), findsNothing);
         await tester.tap(find.text('泰勒公式'));
         await tester.pumpAndSettle();
         expect(find.byType(InkPage), findsOneWidget);
-        await tester.tap(find.byTooltip(RegExp('已保存在本机|修改待保存，点击重试')));
+        await tester.enterText(find.byType(TextField).first, '泰勒公式 ');
+        await tester.pump(const Duration(milliseconds: 1100));
         await tester.pumpAndSettle();
         expect(
           InkDocument.decode(
@@ -115,12 +116,12 @@ void main() {
         );
         await tester.tap(find.byTooltip('返回'));
         await tester.pumpAndSettle();
-        await tester.tap(find.byTooltip('新建知识页'));
+        await tester.tap(find.byTooltip('新建页面'));
         await tester.pumpAndSettle();
         expect(find.byType(InkPage), findsOneWidget);
         expect(
           s.questions.values.any(
-            (q) => (q['title'] as String).startsWith('新建知识页'),
+            (q) => (q['title'] as String).startsWith('新建页面'),
           ),
           isTrue,
         );

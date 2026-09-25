@@ -44,14 +44,14 @@ Future<bool> confirmDeleteNotebook(
   StudyStore store,
   String id,
 ) async {
-  final title = notebooks(store)[id] ?? '学习本';
+  final title = notebooks(store)[id] ?? '笔记本';
   final count = store.questions.values
       .where((q) => q['notebookId'] == id && q['deleted'] == false)
       .length;
   final yes = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('删除这本学习本？'),
+      title: const Text('删除这本笔记本？'),
       content: Text(
         '将从本机移除「$title」及其中 $count 条内容。草稿和历史记录保留；已经发布的社区内容不会下架。删除前可先导出备份。',
       ),
@@ -115,7 +115,7 @@ class AllNotebooksPage extends StatefulWidget {
 }
 
 class _AllNotebooksPageState extends State<AllNotebooksPage> {
-  String query = '', filter = '我创建的';
+  String query = '', filter = '全部';
   bool searching = false, loosePages = false;
   @override
   void initState() {
@@ -250,7 +250,7 @@ class _AllNotebooksPageState extends State<AllNotebooksPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '我的知识本',
+                      '我的笔记本',
                       style: TextStyle(
                         fontSize: 25,
                         fontWeight: FontWeight.bold,
@@ -268,49 +268,6 @@ class _AllNotebooksPageState extends State<AllNotebooksPage> {
             ],
           ),
           const SizedBox(height: 22),
-          SizedBox(
-            height: 74,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (final f in ['我创建的', '已上传社区', '参与编辑', '待同步', '只读分享', '全部'])
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(18),
-                      onTap: () => setState(() => filter = f),
-                      child: Container(
-                        width: 100,
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: filter == f
-                              ? const Color(0xffe0edff)
-                              : const Color(0xffeef3f9),
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        child: Column(
-                          children: [
-                            Text(
-                              f,
-                              style: TextStyle(
-                                color: filter == f
-                                    ? const Color(0xff1263ff)
-                                    : Colors.blueGrey,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              '${f == '全部' ? all.length : all.where((b) => matches(b.key, f)).length}',
-                              style: const TextStyle(color: Colors.blueGrey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
           if (searching)
             Padding(
               padding: const EdgeInsets.only(top: 16),
@@ -378,6 +335,11 @@ class _AllNotebooksPageState extends State<AllNotebooksPage> {
           ],
           if (!loosePages)
             NotebookReorderList(
+              onColor: (indices) => chooseItemColor(
+                context,
+                widget.store,
+                indices.map((i) => visible[i].key),
+              ),
               onReorder: (a, b) => reorderItems(
                 widget.store,
                 'books',
@@ -404,7 +366,7 @@ class _AllNotebooksPageState extends State<AllNotebooksPage> {
                       child: ListTile(
                         contentPadding: const EdgeInsets.all(14),
                         leading: NotebookCover(
-                          index: all.indexOf(b),
+                          index: itemColor(widget.store, b.key),
                           state: bookIconState(widget.store, b.key),
                         ),
                         title: Text(
@@ -419,7 +381,7 @@ class _AllNotebooksPageState extends State<AllNotebooksPage> {
                           padding: const EdgeInsets.only(top: 10),
                           child: Text(
                             '${notebookChapters(widget.store, b.key).length} 章 · ${matches(b.key, '已上传社区')
-                                ? '有已发布知识页'
+                                ? '有已发布页面'
                                 : widget.store.settings.containsKey('fork:${b.key}')
                                 ? '我的派生版本'
                                 : '我创建的'}',
@@ -534,7 +496,7 @@ class _NotebooksPageState extends State<NotebooksPage> {
           onTap: renameBook,
           child: Row(
             children: [
-              const NotebookCover(),
+              NotebookCover(index: itemColor(widget.store, selected!)),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -579,6 +541,11 @@ class _NotebooksPageState extends State<NotebooksPage> {
           ),
           const SizedBox(height: 12),
           NotebookReorderList(
+            onColor: (indices) => chooseItemColor(
+              context,
+              widget.store,
+              indices.map((i) => 'chapter:$selected:${chapters[i]}'),
+            ),
             onReorder: (a, b) => reorderItems(
               widget.store,
               'chapters:$selected',
@@ -612,7 +579,11 @@ class _NotebooksPageState extends State<NotebooksPage> {
                     child: ListTile(
                       contentPadding: const EdgeInsets.all(14),
                       leading: NotebookCover(
-                        index: i,
+                        index: itemColor(
+                          widget.store,
+                          'chapter:$selected:${chapters[i]}',
+                          parent: selected,
+                        ),
                         contentIcon:
                             widget.store.questions.values.any(
                               (q) =>
@@ -638,7 +609,7 @@ class _NotebooksPageState extends State<NotebooksPage> {
                         ),
                       ),
                       subtitle: Text(
-                        '${widget.store.questions.values.where((q) => q['deleted'] == false && q['notebookId'] == selected && chapterName(q) == chapters[i]).length} 个知识页',
+                        '${widget.store.questions.values.where((q) => q['deleted'] == false && q['notebookId'] == selected && chapterName(q) == chapters[i]).length} 个页面',
                         style: const TextStyle(color: Colors.blueGrey),
                       ),
                       trailing: const Icon(Icons.chevron_right),

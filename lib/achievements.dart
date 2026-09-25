@@ -105,12 +105,12 @@ const achievements = [
   ),
   Achievement(
     'popular',
-    '人气学习本',
+    '人气笔记本',
     'Popular Notebook',
     [10, 100, 500, 2000],
     'Star',
     Icons.star_outline,
-    '单个公开学习本的独立用户收藏数，排除作者自己，不累加多个本子。',
+    '单个公开笔记本的独立用户收藏数，排除作者自己，不累加多个本子。',
   ),
   Achievement(
     'helpful',
@@ -128,7 +128,7 @@ const achievements = [
     [4, 12, 26, 52],
     '周',
     Icons.trending_up,
-    '过去 52 周里有有效学习成果的不同周，不要求连续签到。',
+    '过去 52 周中，有有效学习成果或累计学习满 30 分钟的周，不要求连续签到。',
   ),
 ];
 const tierNames = ['尚未达成', '初级', '进阶', '优秀', '卓越'];
@@ -241,6 +241,22 @@ Map<String, int> localAchievements(StudyStore store, {DateTime? now}) {
       (byBook[b] ??= <String>{}).add(w);
     }
   }
+  final studyWeeks = <String, int>{};
+  for (final e in store.settings.entries.where(
+    (e) => e.key.startsWith('studyTime:'),
+  )) {
+    final d = DateTime.tryParse(e.key.substring(10));
+    if (d == null ||
+        d.isAfter(today) ||
+        d.isBefore(today.subtract(const Duration(days: 364)))) {
+      continue;
+    }
+    final w = learningWeek(d);
+    studyWeeks[w] = (studyWeeks[w] ?? 0) + (int.tryParse(e.value) ?? 0);
+  }
+  weeks.addAll(
+    studyWeeks.entries.where((e) => e.value >= 1800).map((e) => e.key),
+  );
   final changedSources = <String>{};
   for (final item in store.settings.entries.where(
     (e) => e.key.startsWith('fork:'),

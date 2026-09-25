@@ -266,7 +266,7 @@ class _ForkUpdatesPageState extends State<ForkUpdatesPage> {
         padding: const EdgeInsets.all(20),
         children: [
           Text(
-            baseline?['title'] as String? ?? '派生学习本',
+            baseline?['title'] as String? ?? '派生笔记本',
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 8),

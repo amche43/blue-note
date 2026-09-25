@@ -38,7 +38,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.questions.length, 1);
     final entry = store.questions.values.single;
-    expect(entry['title'], '新建知识页1');
+    expect(entry['title'], '新建页面1');
     expect(InkDocument.decode(entry['canvas'] as String).ruled, isFalse);
     expect(find.byKey(const ValueKey('ink-tool-panel')), findsNothing);
     final before = tester.getTopLeft(find.byKey(const ValueKey('ink-canvas')));
@@ -267,7 +267,7 @@ void main() {
             .onPressed,
         isNotNull,
       );
-      await tester.tap(find.byTooltip(RegExp('已保存在本机|修改待保存，点击重试')));
+      await tester.pump(const Duration(milliseconds: 1100));
       await tester.pumpAndSettle();
       expect(
         InkDocument.decode(
@@ -313,7 +313,7 @@ void main() {
       );
       await tester.tap(find.byTooltip('重做'));
       await tester.pump();
-      await tester.tap(find.byTooltip(RegExp('已保存在本机|修改待保存，点击重试')));
+      await tester.pump(const Duration(milliseconds: 1100));
       await tester.pumpAndSettle();
       expect(s.questions.length, 1);
       final id = s.questions.keys.single;
@@ -338,7 +338,7 @@ void main() {
       );
       await tester.tap(find.byTooltip('收起思路'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip(RegExp('已保存在本机|修改待保存，点击重试')));
+      await tester.pump(const Duration(milliseconds: 1100));
       await tester.pumpAndSettle();
       expect(
         InkDocument.decode(
@@ -377,11 +377,11 @@ void main() {
       final book = 'book-${'d' * 32}', target = 'book-${'e' * 32}';
       await s.setting(
         'notebook:$book',
-        jsonEncode({'title': '原学习本', 'kind': 'question'}),
+        jsonEncode({'title': '原笔记本', 'kind': 'question'}),
       );
       await s.setting(
         'notebook:$target',
-        jsonEncode({'title': '提问学习本', 'kind': 'question'}),
+        jsonEncode({'title': '提问笔记本', 'kind': 'question'}),
       );
       final raw = const InkDocument(
         elements: [
@@ -400,7 +400,7 @@ void main() {
         'title': '原题',
         'canvas': raw,
         'notebookId': book,
-        'notebookTitle': '原学习本',
+        'notebookTitle': '原笔记本',
         'chapter': '第一章',
       });
       await tester.pumpWidget(
@@ -421,11 +421,11 @@ void main() {
         const Offset(280, 200),
       );
       await tester.pump();
-      await tester.runAsync(() => tester.tap(find.text('复制为新知识页')));
+      await tester.runAsync(() => tester.tap(find.text('复制为新页面')));
       await tester.pumpAndSettle();
       await tester.tap(find.byType(DropdownButtonFormField<String>));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('提问学习本').last);
+      await tester.tap(find.text('提问笔记本').last);
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).last, '局部题目');
       await tester.runAsync(() async {

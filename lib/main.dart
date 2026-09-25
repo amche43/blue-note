@@ -66,12 +66,7 @@ class BlueNoteApp extends StatelessWidget {
     localizationsDelegates: GlobalMaterialLocalizations.delegates,
     theme: blueNoteTheme(),
     scrollBehavior: const BlueScrollBehavior(),
-    home: showWelcome
-        ? WelcomePage(
-            store: store,
-            child: HomePage(store: store),
-          )
-        : HomePage(store: store),
+    home: HomePage(store: store),
   );
 }
 
@@ -569,7 +564,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         key: ValueKey('search-$tab'),
         initialValue: query,
         decoration: const InputDecoration(
-          hintText: '搜索学习本、方法、章节或笔记',
+          hintText: '搜索笔记本、方法、章节或笔记',
           prefixIcon: Icon(Icons.search),
         ),
         onChanged: (v) => setState(() => query = v),
@@ -581,7 +576,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               (b) => ListTile(
                 leading: const Icon(Icons.menu_book_outlined),
                 title: Text(b.value),
-                subtitle: const Text('我的学习本'),
+                subtitle: const Text('我的笔记本'),
                 onTap: () => Navigator.push<void>(
                   context,
                   MaterialPageRoute(

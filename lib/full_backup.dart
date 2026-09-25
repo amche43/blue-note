@@ -7,6 +7,8 @@ const fullBackupLimit = 64 * 1024 * 1024;
 bool portableSetting(String key) =>
     key.startsWith('notebook:') ||
     key.startsWith('order:') ||
+    key.startsWith('color:') ||
+    key.startsWith('studyTime:') ||
     key.startsWith('favorite:') ||
     key.startsWith('fork:') ||
     key.startsWith('adoption:') ||
@@ -18,7 +20,7 @@ class FullBackup {
   final Map<String, String> settings, captures;
   FullBackup(this.events, this.settings, this.captures);
   String get summary =>
-      '${events.length} 条学习记录 · ${settings.keys.where((k) => k.startsWith('notebook:')).length} 个学习本设置 · ${captures.length} 份图片与识别记录';
+      '${events.length} 条学习记录 · ${settings.keys.where((k) => k.startsWith('notebook:')).length} 个笔记本设置 · ${captures.length} 份图片与识别记录';
   static FullBackup decode(String raw) {
     if (utf8.encode(raw).length > fullBackupLimit) {
       throw const FormatException('备份超过 64MB，请减少图片后再试');
@@ -97,6 +99,13 @@ class FullBackup {
           }
           validateQuestion(p['question'] as Json);
         }
+      } else if (e.key.startsWith('color:') || e.key.startsWith('studyTime:')) {
+        final n = int.tryParse(e.value);
+        if (n == null ||
+            n < 0 ||
+            n > (e.key.startsWith('color:') ? 5 : 86400)) {
+          throw const FormatException('显示或学习时长数据无效');
+        }
       } else if (e.key.startsWith('order:')) {
         final ids = jsonDecode(e.value);
         if (ids is! List ||
@@ -117,7 +126,7 @@ class FullBackup {
                     (b['chapters'] as List).any(
                       (c) => c is! String || c.trim().isEmpty || c.length > 120,
                     )))) {
-          throw const FormatException('学习本设置无效');
+          throw const FormatException('笔记本设置无效');
         }
       } else if (e.key.startsWith('favorite:') &&
           !['true', 'false'].contains(e.value)) {

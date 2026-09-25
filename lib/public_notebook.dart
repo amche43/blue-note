@@ -43,7 +43,7 @@ class _PublicNotebookPageState extends State<PublicNotebookPage> {
     await widget.store.createFork(forkLocalId, snapshot);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已保存为私有学习本，保留原作来源。加入自己的理解后才计入派生成就。')),
+      const SnackBar(content: Text('已保存为私有笔记本，保留原作来源。加入自己的理解后才计入派生成就。')),
     );
     await Navigator.push<void>(
       context,
@@ -107,7 +107,7 @@ class _PublicNotebookPageState extends State<PublicNotebookPage> {
     final value = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(apply ? '申请参与维护' : '编辑学习本简介'),
+        title: Text(apply ? '申请参与维护' : '编辑笔记本简介'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -119,7 +119,7 @@ class _PublicNotebookPageState extends State<PublicNotebookPage> {
                 maxLines: 8,
                 maxLength: apply ? 1000 : 8000,
                 decoration: InputDecoration(
-                  hintText: apply ? '你希望为这本学习本补充什么？' : '介绍本子的学习目标、整理方式与适用对象…',
+                  hintText: apply ? '你希望为这本笔记本补充什么？' : '介绍本子的学习目标、整理方式与适用对象…',
                 ),
               ),
             ],
@@ -154,10 +154,10 @@ class _PublicNotebookPageState extends State<PublicNotebookPage> {
     final w = workspace;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('学习本'),
+        title: const Text('笔记本'),
         actions: [
           IconButton(
-            tooltip: '刷新学习本',
+            tooltip: '刷新笔记本',
             onPressed: busy ? null : () => run(load),
             icon: const Icon(Icons.refresh),
           ),
@@ -250,7 +250,7 @@ class _PublicNotebookPageState extends State<PublicNotebookPage> {
             children: [
               Chip(label: Text(widget.book['subjects'] as String? ?? '学习整理')),
               Chip(
-                label: Text(widget.book['kind'] == 'knowledge' ? '知识本' : '错题本'),
+                label: Text(widget.book['kind'] == 'knowledge' ? '笔记本' : '错题本'),
               ),
             ],
           ),
@@ -276,7 +276,7 @@ class _PublicNotebookPageState extends State<PublicNotebookPage> {
                   widget.book['saved'] == 1 ? Icons.star : Icons.star_border,
                   color: const Color(0xffedaf2c),
                 ),
-                label: Text(widget.book['saved'] == 1 ? '已收藏' : '收藏学习本'),
+                label: Text(widget.book['saved'] == 1 ? '已收藏' : '收藏笔记本'),
               ),
               TextButton.icon(
                 onPressed: busy

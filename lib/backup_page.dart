@@ -87,7 +87,7 @@ class _BackupPageState extends State<BackupPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('学习本备份')),
+    appBar: AppBar(title: const Text('笔记本备份')),
     body: ListView(
       padding: const EdgeInsets.all(24),
       children: [
@@ -103,7 +103,7 @@ class _BackupPageState extends State<BackupPage> {
         ),
         const SizedBox(height: 12),
         const Text(
-          '保存这台设备的全部学习本内容、空本子、题目原图与识别记录、笔记、作答历史和收藏。账号口令、聊天和服务端内容不在此备份内。',
+          '保存这台设备的全部笔记本内容、空本子、题目原图与识别记录、笔记、作答历史和收藏。账号口令、聊天和服务端内容不在此备份内。',
         ),
         const SizedBox(height: 20),
         FilledButton.icon(

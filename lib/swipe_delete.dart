@@ -22,11 +22,16 @@ class _SwipeDeleteState extends State<SwipeDelete> {
     borderRadius: BorderRadius.circular(12),
     child: Stack(
       children: [
-        Positioned.fill(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: SizedBox(
-              width: extent,
+        Positioned(
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: reveal,
+          child: ClipRect(
+            child: OverflowBox(
+              alignment: Alignment.centerRight,
+              minWidth: extent,
+              maxWidth: extent,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -84,10 +89,7 @@ class _SwipeDeleteState extends State<SwipeDelete> {
               setState(() => reveal = reveal > 25 ? extent : 0),
           child: Transform.translate(
             offset: Offset(-reveal, 0),
-            child: Material(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              child: widget.child,
-            ),
+            child: Material(color: Colors.transparent, child: widget.child),
           ),
         ),
       ],

@@ -20,7 +20,7 @@ class PreviewCommunity extends CommunityClient {
       for (var i = 0; i < 3; i++)
         {
           'id': 'book-${'$i' * 32}',
-          'title': ['高数极限错题本', '线性代数知识本', '操作系统课程笔记'][i],
+          'title': ['高数极限错题本', '线性代数笔记本', '操作系统课程笔记'][i],
           'name': '预览用户',
           'count': [12, 8, 6][i],
           'subjects': ['高等数学', '线性代数', '操作系统'][i],
@@ -79,7 +79,7 @@ void main() {
         'prompt': '仅用于界面测试的内容',
         'contentKind': i == 0 ? 'question' : 'knowledge',
         'notebookId': 'book-${'$i' * 32}',
-        'notebookTitle': ['高数极限错题本', '线性代数知识本', '操作系统课程笔记'][i],
+        'notebookTitle': ['高数极限错题本', '线性代数笔记本', '操作系统课程笔记'][i],
       });
     }
     final now = DateTime.now();
@@ -135,16 +135,13 @@ void main() {
       }
     });
     await shot('welcome');
-    await tester.ensureVisible(find.text('开始我的学习'));
-    await tester.tap(find.text('开始我的学习'));
-    await tester.pumpAndSettle();
-    expect(store.settings['welcomeSeen'], 'true');
+    expect(find.text('开始我的学习'),findsNothing);
     await shot('home-demo');
     await store.setting(
       'notebook:${'book-${'e' * 32}'}',
-      '{"title":"空白学习本","kind":"question"}',
+      '{"title":"空白笔记本","kind":"question"}',
     );
-    expect(find.text('搜索学习本、知识点、题目…'), findsNothing);
+    expect(find.text('搜索笔记本、知识点、题目…'), findsNothing);
     await tester.pumpWidget(
       RepaintBoundary(
         key: key,

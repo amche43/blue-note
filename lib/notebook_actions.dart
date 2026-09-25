@@ -28,27 +28,169 @@ Future<void> reorderItems(
   await store.setting('order:$key', jsonEncode(next));
 }
 
-class NotebookReorderList extends StatelessWidget {
+int itemColor(StudyStore store, String id, {String? parent}) {
+  final value = store.settings['color:$id'];
+  if (value != null) return (int.tryParse(value) ?? 0).clamp(0, 5);
+  if (parent != null) {
+    if (parent.startsWith('chapter:')) {
+      final book = parent.substring(8).split(':').first;
+      return itemColor(store, parent, parent: book);
+    }
+    return itemColor(store, parent);
+  }
+  return 0;
+}
+
+Future<void> chooseItemColor(
+  BuildContext context,
+  StudyStore store,
+  Iterable<String> ids,
+) async {
+  final color = await showModalBottomSheet<int>(
+    context: context,
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Wrap(
+          spacing: 14,
+          runSpacing: 14,
+          children: [
+            for (var i = 0; i < notebookColors.length; i++)
+              IconButton(
+                tooltip: '颜色${i + 1}',
+                onPressed: () => Navigator.pop(ctx, i),
+                icon: Icon(Icons.circle, color: notebookColors[i], size: 34),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+  if (color == null) return;
+  for (final id in ids) {
+    await store.setting('color:$id', color.toString());
+  }
+}
+
+class NotebookReorderList extends StatefulWidget {
   final List<Widget> children;
   final void Function(int, int) onReorder;
+  final void Function(List<int>)? onColor;
   const NotebookReorderList({
     super.key,
     required this.children,
     required this.onReorder,
+    this.onColor,
   });
   @override
-  Widget build(BuildContext context) => ReorderableListView(
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    buildDefaultDragHandles: false,
-    onReorderItem: (a, b) => onReorder(a, b > a ? b + 1 : b),
+  State<NotebookReorderList> createState() => _NotebookReorderListState();
+}
+
+class _NotebookReorderListState extends State<NotebookReorderList> {
+  bool editing = false;
+  final selected = <Key>{};
+  @override
+  Widget build(BuildContext context) => Column(
     children: [
-      for (var i = 0; i < children.length; i++)
-        ReorderableDelayedDragStartListener(
-          key: children[i].key,
-          index: i,
-          child: children[i],
+      if (editing)
+        Row(
+          children: [
+            TextButton(
+              onPressed: () => setState(
+                () => selected.addAll(widget.children.map((w) => w.key!)),
+              ),
+              child: const Text('全选'),
+            ),
+            Text('${selected.length} 项'),
+            const Spacer(),
+            if (widget.onColor != null)
+              IconButton(
+                tooltip: '为选中项改色',
+                onPressed: selected.isEmpty
+                    ? null
+                    : () => widget.onColor!([
+                        for (var i = 0; i < widget.children.length; i++)
+                          if (selected.contains(widget.children[i].key)) i,
+                      ]),
+                icon: const Icon(Icons.palette_outlined),
+              ),
+            TextButton(
+              onPressed: () => setState(() {
+                editing = false;
+                selected.clear();
+              }),
+              child: const Text('完成'),
+            ),
+          ],
         ),
+      ReorderableListView(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        buildDefaultDragHandles: false,
+        dragBoundaryProvider: (_) => null,
+        onReorderItem: (a, b) => widget.onReorder(a, b > a ? b + 1 : b),
+        children: [
+          for (var i = 0; i < widget.children.length; i++)
+            GestureDetector(
+              key: widget.children[i].key,
+              onLongPress: editing
+                  ? null
+                  : () => setState(() {
+                      editing = true;
+                      selected.add(widget.children[i].key!);
+                    }),
+              child: Row(
+                children: [
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 180),
+                    child: editing
+                        ? SizedBox(
+                            width: 36,
+                            child: Checkbox(
+                              value: selected.contains(widget.children[i].key),
+                              onChanged: (v) => setState(() {
+                                if (v == true) {
+                                  selected.add(widget.children[i].key!);
+                                } else {
+                                  selected.remove(widget.children[i].key);
+                                }
+                              }),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                  Expanded(
+                    child: editing
+                        ? GestureDetector(
+                            onTap: () => setState(() {
+                              final key = widget.children[i].key!;
+                              if (!selected.add(key)) selected.remove(key);
+                            }),
+                            child: AbsorbPointer(child: widget.children[i]),
+                          )
+                        : widget.children[i],
+                  ),
+                  if (editing) ...[
+                    if (widget.onColor != null)
+                      IconButton(
+                        tooltip: '更改颜色',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => widget.onColor!([i]),
+                        icon: const Icon(Icons.palette_outlined, size: 20),
+                      ),
+                    ReorderableDelayedDragStartListener(
+                      index: i,
+                      child: const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: Icon(Icons.drag_handle, size: 22),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ),
     ],
   );
 }
@@ -98,7 +240,7 @@ Future<void> uploadEntries(
     builder: (ctx) => AlertDialog(
       title: const Text('上传至社区？'),
       content: Text(
-        '将公开所选的 ${entries.length} 个知识页，包含照片、笔迹和思路标记。请确认这些内容可以公开分享。空白页会跳过；已有公开版本不会自动覆盖。',
+        '将公开所选的 ${entries.length} 个页面，包含照片、笔迹和思路标记。请确认这些内容可以公开分享。空白页会跳过；已有公开版本不会自动覆盖。',
       ),
       actions: [
         TextButton(
@@ -181,7 +323,7 @@ Future<void> deleteChapter(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('删除这个章节？'),
-      content: Text('「$chapter」及其知识页将从本机移除，已公开的内容不会下架。'),
+      content: Text('「$chapter」及其页面将从本机移除，已公开的内容不会下架。'),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),

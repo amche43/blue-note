@@ -330,7 +330,7 @@ class _ImprovementEditorState extends State<ImprovementEditor> {
           decoration: const InputDecoration(labelText: '为什么这样修改？'),
         ),
         const Text(
-          '提交后，修改内容和理由会在此学习本公开，原文须经作者接受后才更新。',
+          '提交后，修改内容和理由会在此笔记本公开，原文须经作者接受后才更新。',
           style: TextStyle(fontSize: 12, color: Colors.blueGrey),
         ),
         if (error.isNotEmpty) Text(error),

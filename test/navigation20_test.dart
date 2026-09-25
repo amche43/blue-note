@@ -66,7 +66,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('知识卡片'), findsNothing);
     expect(find.text('我的学习成果'), findsNothing);
-    expect(find.text('我的学习本'), findsNothing);
+    expect(find.text('我的笔记本'), findsNothing);
     await tester.scrollUntilVisible(
       find.text('设置'),
       250,

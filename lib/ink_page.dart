@@ -1,6 +1,5 @@
+import 'learning_time.dart';
 import 'dart:async';
-import 'notebook_actions.dart';
-import 'notebook_ui.dart';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -37,9 +36,10 @@ class InkPage extends StatefulWidget {
 class _InkPageState extends State<InkPage>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   Timer? autoSave;
+  late final LearningClock learningClock;
   Future<bool>? saving;
   final titleFocus = FocusNode();
-  String defaultTitle = '新建知识页1';
+  String defaultTitle = '新建页面1';
   double? elasticRawX, elasticShownX;
   late Json question;
   Json? expected, capture;
@@ -84,6 +84,7 @@ class _InkPageState extends State<InkPage>
   @override
   void initState() {
     super.initState();
+    learningClock = LearningClock(widget.store);
     WidgetsBinding.instance.addObserver(this);
     rebound =
         AnimationController(
@@ -118,10 +119,10 @@ class _InkPageState extends State<InkPage>
           .map((q) => q['title'])
           .toSet();
       var n = 1;
-      while (names.contains('新建知识页$n')) {
+      while (names.contains('新建页面$n')) {
         n++;
       }
-      title.text = '新建知识页$n';
+      title.text = '新建页面$n';
     }
     defaultTitle = title.text;
     history = InkHistory(const InkDocument());
@@ -169,7 +170,7 @@ class _InkPageState extends State<InkPage>
         }
         draft.active = true;
         await loadImages();
-        if (savedId != null && !draft.hasChanges) draft.status = '已保存到学习本';
+        if (savedId != null && !draft.hasChanges) draft.status = '已保存到笔记本';
         if (mounted) {
           setState(() => ready = true);
           if (savedId == null || draft.hasChanges) await save();
@@ -337,6 +338,7 @@ class _InkPageState extends State<InkPage>
   }
 
   void changed() {
+    learningClock.touch();
     draft.schedule();
     if (mounted) setState(() {});
     autoSave?.cancel();
@@ -349,6 +351,7 @@ class _InkPageState extends State<InkPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    learningClock.setForeground(state == AppLifecycleState.resumed);
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
       if (ready && draft.hasChanges && pointer == null) save();
@@ -400,7 +403,7 @@ class _InkPageState extends State<InkPage>
       question = {...expected!};
       title.text = question['title'] as String;
       draft.hasChanges = false;
-      draft.status = '已保存到学习本';
+      draft.status = '已保存到笔记本';
 
       return true;
     } catch (e) {
@@ -414,6 +417,7 @@ class _InkPageState extends State<InkPage>
 
   Future<void> leave() async {
     autoSave?.cancel();
+    await learningClock.writes;
     if (saving != null && !await saving!) return;
     if (draft.hasChanges && !await save()) return;
     if (mounted) {
@@ -426,6 +430,7 @@ class _InkPageState extends State<InkPage>
   @override
   void dispose() {
     autoSave?.cancel();
+    learningClock.close();
     WidgetsBinding.instance.removeObserver(this);
     titleFocus.dispose();
     draft.dispose();
@@ -467,6 +472,7 @@ class _InkPageState extends State<InkPage>
   }
 
   void down(PointerDownEvent event) {
+    learningClock.touch();
     if (!ready || busy || pointer != null) return;
     final hit = doc.elements.reversed
         .where(
@@ -503,6 +509,7 @@ class _InkPageState extends State<InkPage>
   }
 
   void move(PointerMoveEvent event) {
+    learningClock.touch();
     if (pointer != event.pointer || start == null) return;
     final p = clampPoint(event.localPosition);
     if (trail.length < 12000 && (p - trail.last).distance > .5) trail.add(p);
@@ -846,7 +853,7 @@ class _InkPageState extends State<InkPage>
 
   Future<void> location() async {
     if (!ready || busy) return;
-    final books = <String, String>{'': '暂不归入学习本'};
+    final books = <String, String>{'': '暂不归入笔记本'};
     for (final q in widget.store.questions.values) {
       if (q['deleted'] == false && q['notebookId'] != '') {
         books[q['notebookId'] as String] = q['notebookTitle'] as String;
@@ -868,7 +875,7 @@ class _InkPageState extends State<InkPage>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, set) => AlertDialog(
-          title: const Text('放进我的学习本'),
+          title: const Text('放进我的笔记本'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -955,7 +962,7 @@ class _InkPageState extends State<InkPage>
           (jsonDecode(e.value) as Json)['title'] as String;
     }
     if (books.isEmpty) {
-      message('请先创建目标学习本');
+      message('请先创建目标笔记本');
       return;
     }
     String book = books.containsKey(question['notebookId'])
@@ -968,7 +975,7 @@ class _InkPageState extends State<InkPage>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, set) => AlertDialog(
-          title: const Text('复制为新知识页'),
+          title: const Text('复制为新页面'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1351,7 +1358,7 @@ class _InkPageState extends State<InkPage>
                 TextButton.icon(
                   onPressed: selected.isEmpty ? null : copyRegion,
                   icon: const Icon(Icons.copy),
-                  label: const Text('复制为新知识页'),
+                  label: const Text('复制为新页面'),
                 ),
                 IconButton(
                   tooltip: '左移',
@@ -1545,6 +1552,7 @@ class _InkPageState extends State<InkPage>
                   panEnabled: tool == 'hand',
                   scaleEnabled: tool == 'hand',
                   onInteractionStart: (_) {
+                    learningClock.touch();
                     rebound.stop();
                     elasticRawX = null;
                     elasticShownX = null;
@@ -1677,22 +1685,6 @@ class _InkPageState extends State<InkPage>
               ),
             ),
             actions: [
-              IconButton(
-                tooltip: busy
-                    ? '正在保存到本机'
-                    : draft.hasChanges
-                    ? '修改待保存，点击重试'
-                    : '已保存在本机',
-                onPressed: ready && !busy ? save : null,
-                icon: NotebookCover(
-                  kind: NoteIconKind.page,
-                  state: draft.hasChanges || busy
-                      ? NoteIconState.pending
-                      : savedId == null
-                      ? NoteIconState.local
-                      : entryIconState(widget.store, savedId!),
-                ),
-              ),
               PopupMenuButton<String>(
                 onSelected: (v) async {
                   if (v == 'stylus') {
@@ -1766,7 +1758,7 @@ class _InkPageState extends State<InkPage>
                     children: [
                       Expanded(
                         child: Text(
-                          '${question['notebookTitle'] == '' ? '未归入学习本' : question['notebookTitle']} / ${question['chapter'] == '' ? '未分章' : question['chapter']}',
+                          '${question['notebookTitle'] == '' ? '未归入笔记本' : question['notebookTitle']} / ${question['chapter'] == '' ? '未分章' : question['chapter']}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(

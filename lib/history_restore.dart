@@ -176,7 +176,7 @@ class _HistoryRestorePageState extends State<HistoryRestorePage> {
             const Divider(height: 28),
           ],
           const Text(
-            '题号、学习本归属、照片识别记录及复习进度不会随字段恢复而改变。',
+            '题号、笔记本归属、照片识别记录及复习进度不会随字段恢复而改变。',
             style: TextStyle(fontSize: 12, color: Colors.blueGrey),
           ),
         ],

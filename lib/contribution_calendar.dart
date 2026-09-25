@@ -1,3 +1,4 @@
+import 'learning_time.dart';
 import 'package:flutter/material.dart';
 import 'domain.dart';
 import 'store.dart';
@@ -86,7 +87,12 @@ class _ContributionCalendarState extends State<ContributionCalendar> {
     var active = 0;
     for (var i = 0; i < 365; i++) {
       if ((days[dayKey(DateTime(today.year, today.month, today.day - i))] ?? [])
-          .isNotEmpty) {
+              .isNotEmpty ||
+          learningSeconds(
+                widget.store,
+                DateTime(today.year, today.month, today.day - i),
+              ) >
+              0) {
         active++;
       }
     }
@@ -110,7 +116,7 @@ class _ContributionCalendarState extends State<ContributionCalendar> {
           children: [
             const Expanded(
               child: Text(
-                '学习贡献图',
+                '学习图',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
               ),
             ),
@@ -191,7 +197,7 @@ class _ContributionCalendarState extends State<ContributionCalendar> {
                                 ? Semantics(
                                     button: true,
                                     label:
-                                        '${dayKey(date)}，${entries.length}次贡献',
+                                        '${dayKey(date)}，${learningDuration(learningSeconds(widget.store, date))}，${entries.length}次贡献',
                                     child: InkWell(
                                       key: ValueKey('day-${dayKey(date)}'),
                                       onTap: () =>
@@ -201,7 +207,13 @@ class _ContributionCalendarState extends State<ContributionCalendar> {
                                         decoration: BoxDecoration(
                                           color:
                                               contributionColors[contributionLevel(
-                                                entries.length,
+                                                entries.length +
+                                                    (learningSeconds(
+                                                              widget.store,
+                                                              date,
+                                                            ) /
+                                                            300)
+                                                        .ceil(),
                                               )],
                                           borderRadius: BorderRadius.circular(
                                             2,
@@ -233,7 +245,7 @@ class _ContributionCalendarState extends State<ContributionCalendar> {
             children: [
               Expanded(
                 child: Text(
-                  '${dayKey(selected!)} · ${days[dayKey(selected!)]?.length ?? 0} 次贡献',
+                  '${dayKey(selected!)} · ${learningDuration(learningSeconds(widget.store, selected!))} · ${days[dayKey(selected!)]?.length ?? 0} 次贡献',
                   style: const TextStyle(
                     fontSize: 12,
                     color: Color(0xff2878f0),
@@ -288,10 +300,12 @@ class ContributionRecordsPage extends StatelessWidget {
             .toList()
           ..sort(compareEvents);
     return Scaffold(
-      appBar: AppBar(title: Text(onlyReviews ? '复习记录' : '${dayKey(day!)} 的贡献')),
+      appBar: AppBar(title: Text(onlyReviews ? '复习记录' : '${dayKey(day!)} 的学习')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          if (day != null)
+            Text('学习时长：${learningDuration(learningSeconds(store, day!))}'),
           Text(
             '共 ${records.length} 条记录',
             style: Theme.of(context).textTheme.titleLarge,

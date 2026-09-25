@@ -25,7 +25,7 @@ class CreatePage extends StatelessWidget {
       ),
       const SizedBox(height: 12),
       const Text(
-        '笔记本 → 章节 → 知识页。文字、照片和思路，都留在画布里。',
+        '笔记本 → 章节 → 页面。文字、照片和思路，都留在画布里。',
         style: TextStyle(color: Colors.blueGrey, height: 1.7),
       ),
       const SizedBox(height: 28),
@@ -44,14 +44,14 @@ class CreatePage extends StatelessWidget {
           ),
         ),
         icon: const Icon(Icons.auto_stories_outlined),
-        label: const Text('打开我的学习本'),
+        label: const Text('打开我的笔记本'),
       ),
       if (store.questions.values.any(
         (q) => q['notebookId'] == '' && q['deleted'] == false,
       )) ...[
         const SizedBox(height: 32),
         const Text(
-          '待归档的知识页',
+          '待归档的页面',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         for (final e in store.questions.entries.where(

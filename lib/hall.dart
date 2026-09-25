@@ -105,13 +105,13 @@ class _HallPageState extends State<HallPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: widget.embedded ? null : AppBar(title: const Text('探索学习本')),
+    appBar: widget.embedded ? null : AppBar(title: const Text('探索笔记本')),
     body: ListView(
       padding: const EdgeInsets.all(20),
       children: [
         if (widget.embedded)
           const Text(
-            '探索学习本',
+            '探索笔记本',
             style: TextStyle(fontSize: 23, fontWeight: FontWeight.w700),
           ),
         const Text(
@@ -126,7 +126,7 @@ class _HallPageState extends State<HallPage> {
           onSubmitted: (_) => reload(),
           decoration: InputDecoration(
             counterText: '',
-            hintText: '搜索错题本、知识本、课程…',
+            hintText: '搜索错题本、笔记本、课程…',
             suffixIcon: IconButton(
               tooltip: '搜索',
               icon: const Icon(Icons.search),

@@ -196,22 +196,61 @@ class NotebookCard extends StatelessWidget {
   final Widget child;
   const NotebookCard({super.key, required this.child});
   @override
-  Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.only(bottom: 12),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(22),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x055a99dd),
-          blurRadius: 18,
-          offset: Offset(0, 5),
+  Widget build(BuildContext context) {
+    final tile = child;
+    final content = tile is ListTile
+        ? ListTile(
+            minTileHeight: 72,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: 0,
+            ),
+            leading: tile.leading == null
+                ? null
+                : SizedBox(
+                    width: 36,
+                    height: 38,
+                    child: FittedBox(child: tile.leading),
+                  ),
+            title: tile.title is Text
+                ? Text(
+                    (tile.title as Text).data ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: notebookInk,
+                    ),
+                  )
+                : tile.title,
+            subtitle: tile.subtitle == null
+                ? null
+                : DefaultTextStyle.merge(
+                    style: const TextStyle(fontSize: 11),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    child: tile.subtitle!,
+                  ),
+            onTap: tile.onTap,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          )
+        : tile;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          splashColor: Colors.white,
+          highlightColor: Colors.white.withValues(alpha: .7),
         ),
-      ],
-    ),
-    clipBehavior: Clip.antiAlias,
-    child: Material(color: Colors.white, child: child),
-  );
+        child: content,
+      ),
+    );
+  }
 }
 
 class NotebookDock extends StatelessWidget {
@@ -240,7 +279,7 @@ class NotebookDock extends StatelessWidget {
               child: Row(
                 children: [
                   for (final item in [
-                    (false, Icons.menu_book_rounded, '知识本', onBooks),
+                    (false, Icons.menu_book_rounded, '笔记本', onBooks),
                     (true, Icons.sticky_note_2_outlined, '便笺', onNotes),
                   ])
                     Expanded(

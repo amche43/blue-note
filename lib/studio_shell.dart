@@ -320,7 +320,7 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
           Icon(Icons.search, size: 18, color: Colors.blueGrey),
           SizedBox(width: 8),
           Text(
-            '搜索学习本、知识点、题目…',
+            '搜索笔记本、知识点、题目…',
             style: TextStyle(fontSize: 12, color: Colors.blueGrey),
           ),
         ],
@@ -370,16 +370,20 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
         ],
       ),
       const SizedBox(height: 14),
-      section('我的学习本', more: () => books()),
+      section('我的笔记本'),
       if (notebooks(store).isEmpty)
         ListTile(
           leading: const Icon(Icons.auto_stories_outlined, color: studioBlue),
           title: const Text('为知识留一个位置'),
-          subtitle: const Text('进入我的学习本，开始第一本笔记'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => books(),
+          subtitle: const Text('点击 + 开始第一本笔记'),
+          onTap: addBook,
         ),
       NotebookReorderList(
+        onColor: (indices) => chooseItemColor(
+          context,
+          store,
+          indices.map((i) => notebooks(store).keys.elementAt(i)),
+        ),
         onReorder: (a, b) =>
             reorderItems(store, 'books', notebooks(store).keys.toList(), a, b),
         children: [
@@ -400,7 +404,10 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
               ),
               child: NotebookCard(
                 child: ListTile(
-                  leading: NotebookCover(state: bookIconState(store, b.key)),
+                  leading: NotebookCover(
+                    index: itemColor(store, b.key),
+                    state: bookIconState(store, b.key),
+                  ),
                   title: Text(b.value),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => books(false, b.key),
@@ -517,7 +524,7 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
       padding: const EdgeInsets.all(22),
       children: [
         const Text(
-          '探索学习本',
+          '探索笔记本',
           style: TextStyle(fontSize: 23, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 16),
@@ -527,7 +534,7 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
         const SizedBox(height: 20),
         const Text('连接后台，发现大家的学习成果', textAlign: TextAlign.center),
         const Text(
-          '公开的错题本、知识本会出现在这里。',
+          '公开的错题本、笔记本会出现在这里。',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 12, color: Colors.blueGrey),
         ),
@@ -565,11 +572,11 @@ class _StudioShellState extends State<StudioShell> with WidgetsBindingObserver {
         const SizedBox(height: 28),
         const Center(child: SceneMascot(MascotScene.messages, width: 180)),
         const SizedBox(height: 20),
-        const Text('与伙伴一起建设学习本', textAlign: TextAlign.center),
+        const Text('与伙伴一起建设笔记本', textAlign: TextAlign.center),
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 12),
           child: Text(
-            '在这里处理共同维护申请，与学习本的伙伴聊天。',
+            '在这里处理共同维护申请，与笔记本的伙伴聊天。',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: Colors.blueGrey),
           ),

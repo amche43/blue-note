@@ -230,7 +230,7 @@ void main() {
       await tester.tap(find.text('改进'));
       await tester.pumpAndSettle();
       expect(find.text('补充极限适用条件'), findsOneWidget);
-      expect(find.text('学习本协作聊天'), findsNothing);
+      expect(find.text('笔记本协作聊天'), findsNothing);
       await shot('improvement-inbox');
       await tester.tap(find.text('协作申请'));
       await tester.pumpAndSettle();

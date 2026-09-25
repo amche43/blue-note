@@ -78,7 +78,7 @@ class LearningWorkbench extends StatelessWidget {
         ),
         const SizedBox(height: 24),
         const Text(
-          '我的学习本',
+          '我的笔记本',
           style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600),
         ),
         Text(

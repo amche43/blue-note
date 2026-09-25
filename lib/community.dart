@@ -320,7 +320,7 @@ class _CommunityPageState extends State<CommunityPage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, update) => AlertDialog(
-          title: const Text('发布我的知识页'),
+          title: const Text('发布我的页面'),
           content: SizedBox(
             width: 460,
             child: SingleChildScrollView(
@@ -549,7 +549,7 @@ class _CommunityPageState extends State<CommunityPage> {
                     ),
                   ),
             icon: const Icon(Icons.travel_explore),
-            label: const Text('进入大厅 · 搜索知识本与错题本'),
+            label: const Text('进入大厅 · 搜索笔记本与错题本'),
           ),
           const SizedBox(height: 12),
           const Text('只显示作者确认公开的内容。私人本子不会自动整本上传。'),
@@ -589,7 +589,7 @@ class _CommunityPageState extends State<CommunityPage> {
           FilledButton.icon(
             onPressed: busy || account == null ? null : publish,
             icon: const Icon(Icons.add),
-            label: const Text('发布我的知识页'),
+            label: const Text('发布我的页面'),
           ),
           if (!busy && questions.isEmpty)
             const Padding(

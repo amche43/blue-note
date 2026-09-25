@@ -109,7 +109,7 @@ extension AdoptionStore on StudyStore {
       if (current['deleted'] == true ||
           current['notebookId'] != before['notebookId'] ||
           current['origin'] != record['origin']) {
-        throw const FormatException('条目已删除或移到其他学习本，不能在这里撤销');
+        throw const FormatException('条目已删除或移到其他笔记本，不能在这里撤销');
       }
       // Reject intervening edits even if the user later restored the same text.
       for (final row in rows) {

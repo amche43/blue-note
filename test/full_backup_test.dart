@@ -43,7 +43,7 @@ void main() {
       );
       await a.setting(
         'notebook:empty',
-        jsonEncode({'title': '空知识本', 'kind': 'knowledge'}),
+        jsonEncode({'title': '空笔记本', 'kind': 'knowledge'}),
       );
       await a.setting('favorite:$id', 'true');
       await a.setting('community', 'SECRET_TOKEN');

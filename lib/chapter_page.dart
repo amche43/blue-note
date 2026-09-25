@@ -43,7 +43,7 @@ Future<void> createChapter(
         ? <String, dynamic>{'title': title, 'kind': 'question'}
         : jsonDecode(raw) as Json;
     final chapters = notebookChapters(store, book);
-    if (chapters.length >= 300) throw const FormatException('章节较多，请建立另一学习本');
+    if (chapters.length >= 300) throw const FormatException('章节较多，请建立另一笔记本');
     await store.setting(
       'notebook:$book',
       jsonEncode({
@@ -150,8 +150,15 @@ class _ChapterPageState extends State<ChapterPage> {
         removeSettings: [
           'notebook:${widget.book}',
           'order:chapters:${widget.book}',
+          'color:chapter:${widget.book}:$currentChapter',
         ],
         localSettings: {
+          if (widget.store.settings.containsKey(
+            'color:chapter:${widget.book}:$currentChapter',
+          ))
+            'color:chapter:${widget.book}:$name': widget
+                .store
+                .settings['color:chapter:${widget.book}:$currentChapter']!,
           'order:chapters:${widget.book}': jsonEncode(
             chapters.map((c) => c == currentChapter ? name : c).toList(),
           ),
@@ -229,10 +236,15 @@ class _ChapterPageState extends State<ChapterPage> {
       backgroundColor: notebookPaper,
       appBar: AppBar(
         backgroundColor: notebookPaper,
-        actions: [NotebookAddButton(onPressed: create, tooltip: '新建知识页')],
+        actions: [NotebookAddButton(onPressed: create, tooltip: '新建页面')],
         title: Row(
           children: [
             NotebookCover(
+              index: itemColor(
+                widget.store,
+                'chapter:${widget.book}:$currentChapter',
+                parent: widget.book,
+              ),
               number:
                   '${notebookChapters(widget.store, widget.book).indexOf(currentChapter) + 1}'
                       .padLeft(2, '0'),
@@ -299,13 +311,18 @@ class _ChapterPageState extends State<ChapterPage> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        query.isEmpty ? '这一章还没有知识页，点击右上角 + 开始记录。' : '没有匹配的知识页',
+                        query.isEmpty ? '这一章还没有页面，点击右上角 + 开始记录。' : '没有匹配的页面',
                       ),
-                      TextButton(onPressed: create, child: const Text('新建知识页')),
+                      TextButton(onPressed: create, child: const Text('新建页面')),
                     ],
                   ),
                 ),
               NotebookReorderList(
+                onColor: (indices) => chooseItemColor(
+                  context,
+                  widget.store,
+                  indices.map((i) => entries[i].key),
+                ),
                 onReorder: (a, b) => reorderItems(
                   widget.store,
                   'pages:${widget.book}',
@@ -323,7 +340,7 @@ class _ChapterPageState extends State<ChapterPage> {
                         final yes = await showDialog<bool>(
                           context: context,
                           builder: (ctx) => AlertDialog(
-                            title: const Text('删除这个知识页？'),
+                            title: const Text('删除这个页面？'),
                             content: Text(e.value['title'] as String),
                             actions: [
                               TextButton(
@@ -357,7 +374,11 @@ class _ChapterPageState extends State<ChapterPage> {
                           ),
                           leading: NotebookCover(
                             kind: NoteIconKind.page,
-                            index: entries.indexOf(e),
+                            index: itemColor(
+                              widget.store,
+                              e.key,
+                              parent: 'chapter:${widget.book}:$currentChapter',
+                            ),
                             state: entryIconState(widget.store, e.key),
                             contentIcon: pageContentIcon(e.value),
                           ),

@@ -88,7 +88,7 @@ class _DraftsPageState extends State<DraftsPage> {
   }
 
   String bookName(LocalDraft draft) {
-    if (draft.book.isEmpty) return '尚未选择学习本';
+    if (draft.book.isEmpty) return '尚未选择笔记本';
     final raw = widget.store.settings['notebook:${draft.book}'];
     if (raw != null) {
       try {
@@ -96,7 +96,7 @@ class _DraftsPageState extends State<DraftsPage> {
       } catch (_) {}
     }
     return (draft.fields['notebookTitle'] as String? ?? '').isEmpty
-        ? '原学习本暂不可用'
+        ? '原笔记本暂不可用'
         : draft.fields['notebookTitle'] as String;
   }
 
@@ -218,14 +218,14 @@ class _DraftsPageState extends State<DraftsPage> {
           ),
           const SizedBox(height: 8),
           const Text(
-            '先留下，再慢慢完善。草稿仅在当前设备，正式保存后才进入学习本。',
+            '先留下，再慢慢完善。草稿仅在当前设备，正式保存后才进入笔记本。',
             style: TextStyle(color: Colors.blueGrey),
           ),
           const SizedBox(height: 20),
           TextField(
             decoration: const InputDecoration(
               prefixIcon: Icon(Icons.search),
-              hintText: '搜索标题、正文或学习本',
+              hintText: '搜索标题、正文或笔记本',
             ),
             onChanged: (v) => setState(() => query = v.trim()),
           ),

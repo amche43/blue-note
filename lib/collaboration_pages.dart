@@ -183,7 +183,7 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
                   SizedBox(height: 16),
                   Text('还没有协作申请'),
                   Text(
-                    '在学习本中申请参与维护，处理结果会出现在这里。',
+                    '在笔记本中申请参与维护，处理结果会出现在这里。',
                     style: TextStyle(fontSize: 12, color: Colors.blueGrey),
                   ),
                 ],
@@ -257,14 +257,14 @@ class _CollaborationInboxState extends State<CollaborationInbox> {
           if (!busy && rooms.isEmpty)
             const Padding(
               padding: EdgeInsets.all(30),
-              child: Text('加入共同维护后，在这里与学习本的伙伴交流。'),
+              child: Text('加入共同维护后，在这里与笔记本的伙伴交流。'),
             ),
           ...rooms.map(
             (r) => ListTile(
               contentPadding: const EdgeInsets.symmetric(vertical: 8),
               leading: const BlueAvatar(index: 1),
               title: Text(r['title'] as String),
-              subtitle: const Text('学习本协作聊天'),
+              subtitle: const Text('笔记本协作聊天'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.push<void>(
                 context,
